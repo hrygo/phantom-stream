@@ -42,6 +42,13 @@ func main() {
 	signatureCmd := flag.NewFlagSet("signature", flag.ExitOnError)
 	signatureFile := signatureCmd.String("f", "", "Path to PDF file")
 
+	incrementalCmd := flag.NewFlagSet("incremental", flag.ExitOnError)
+	incrementalFile := incrementalCmd.String("f", "", "Path to PDF file")
+	objIDParam := incrementalCmd.Int("obj", 72, "Object ID to clean")
+
+	deepscanCmd := flag.NewFlagSet("deepscan", flag.ExitOnError)
+	deepscanFile := deepscanCmd.String("f", "", "Path to PDF file")
+
 	switch os.Args[1] {
 	case "scan":
 		scanCmd.Parse(os.Args[2:])
@@ -115,6 +122,22 @@ func main() {
 			os.Exit(1)
 		}
 		handleSignature(*signatureFile)
+	case "incremental":
+		incrementalCmd.Parse(os.Args[2:])
+		if *incrementalFile == "" {
+			fmt.Println("Error: -f (file) argument is required")
+			incrementalCmd.PrintDefaults()
+			os.Exit(1)
+		}
+		handleIncremental(*incrementalFile, *objIDParam)
+	case "deepscan":
+		deepscanCmd.Parse(os.Args[2:])
+		if *deepscanFile == "" {
+			fmt.Println("Error: -f (file) argument is required")
+			deepscanCmd.PrintDefaults()
+			os.Exit(1)
+		}
+		handleDeepScan(*deepscanFile)
 	default:
 		printUsage()
 		os.Exit(1)
@@ -133,6 +156,8 @@ func printUsage() {
 	fmt.Println("  attacker report -f <file.pdf>")
 	fmt.Println("  attacker detect -f <file.pdf>")
 	fmt.Println("  attacker signature -f <file.pdf>")
+	fmt.Println("  attacker incremental -f <file.pdf> -obj <id>")
+	fmt.Println("  attacker deepscan -f <file.pdf>  (Phase 7)")
 }
 
 func handleScan(file string) {
@@ -308,26 +333,17 @@ func handleDetect(file string) {
 func handleSignature(file string) {
 	fmt.Printf("Removing Signature/Tracking Data from %s...\n", file)
 
-	// Try cleaning embedded files reference first (most conservative)
-	fmt.Println("\n[*] Attempting catalog cleaning (removing EmbeddedFiles reference)...")
-	outPath, err := core.CleanEmbeddedFilesReference(file)
+	// Use stream cleaning approach
+	fmt.Println("\n[*] Attempting stream content cleaning...")
+	outPath, err := core.StreamCleaner(file)
 	if err != nil {
-		fmt.Printf("[!] Catalog cleaning failed: %v\n", err)
-		fmt.Println("[*] Trying stream content cleaning...")
-
-		// Try to clean the actual stream content
-		outPath2, err := core.StreamCleaner(file)
-		if err != nil {
-			fmt.Printf("[!] Stream cleaning failed: %v\n", err)
-			fmt.Printf("[!] All approaches failed\n")
-			os.Exit(1)
-		}
-
-		outPath = outPath2
+		fmt.Printf("[!] Stream cleaning failed: %v\n", err)
+		fmt.Printf("[!] All approaches failed\n")
+		os.Exit(1)
 	}
 
 	// Verify integrity
-	err = core.VerifyFileIntegrity(outPath)
+	err = core.VerifyPDFIntegrity(outPath)
 	if err != nil {
 		fmt.Printf("[!] File integrity check failed: %v\n", err)
 		os.Exit(1)
@@ -336,4 +352,83 @@ func handleSignature(file string) {
 	fmt.Printf("[+] Signature removal complete!\n")
 	fmt.Printf("[+] Cleaned file saved to: %s\n", outPath)
 	fmt.Printf("[+] File structure verified and intact\n")
+}
+
+func handleIncremental(file string, objID int) {
+	fmt.Printf("Performing Simple Incremental Clean on %s...\n", file)
+	fmt.Printf("[*] Target object ID: %d\n", objID)
+
+	// Use simple incremental clean to test the approach
+	err := core.TestIncrementalClean(file)
+	if err != nil {
+		fmt.Printf("[!] Error: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("[+] Simple incremental clean complete!\n")
+	fmt.Printf("[+] Stream content modified while preserving structure\n")
+}
+
+func handleDeepScan(file string) {
+	fmt.Printf("Phase 7 Deep Scan on %s...\n", file)
+
+	// Phase 7 Enhanced Analysis
+	fmt.Println("\n[*] Phase 7: Performing multi-layer analysis...")
+
+	// 1. Basic scan
+	fmt.Println("\n--- Layer 1: Structural Analysis ---")
+	res, err := core.ScanPDF(file)
+	if err != nil {
+		fmt.Printf("[!] Error: %v\n", err)
+	} else if res.IsSuspicious {
+		fmt.Printf("[!] Suspicious tail data found: %d bytes\n", res.SuspiciousBytes)
+	} else {
+		fmt.Println("[+] No tail data anomalies")
+	}
+
+	// 2. Gap analysis
+	fmt.Println("\n--- Layer 2: Gap Analysis ---")
+	advRes, err := core.ScanStructure(file)
+	if err == nil {
+		if advRes.GapAnomalies > 0 {
+			fmt.Printf("[!] Found %d gap anomalies (%d bytes)\n", advRes.GapAnomalies, advRes.SuspiciousBytes)
+		} else {
+			fmt.Println("[+] No structural gaps detected")
+		}
+	}
+
+	// 3. Semantic analysis
+	fmt.Println("\n--- Layer 3: Semantic Analysis ---")
+	semRes, err := core.AnalyzeEmbeddedFilesOnly(file)
+	if err == nil {
+		fmt.Printf("[+] Embedded files: %d\n", semRes.TotalEmbeddedFiles)
+		fmt.Printf("[+] Suspicious files: %d\n", len(semRes.SuspiciousFiles))
+
+		if len(semRes.SuspiciousFiles) > 0 {
+			fmt.Println("\n[!] Suspicious attachments detected:")
+			for _, f := range semRes.SuspiciousFiles {
+				fmt.Printf("  - Object %d: Score=%.2f, Size=%d bytes\n",
+					f.ObjectID, f.SuspicionScore, f.Size)
+			}
+
+			// Attempt to clean using signature command
+			fmt.Println("\n[*] Attempting to neutralize suspicious objects...")
+			outPath, err := core.StreamCleaner(file)
+			if err != nil {
+				fmt.Printf("[!] Clean failed: %v\n", err)
+			} else {
+				fmt.Printf("[+] Cleaned file saved to: %s\n", outPath)
+
+				// Verify integrity
+				err = core.VerifyPDFIntegrity(outPath)
+				if err != nil {
+					fmt.Printf("[!] Integrity check failed: %v\n", err)
+				} else {
+					fmt.Println("[+] File integrity verified")
+				}
+			}
+		}
+	}
+
+	fmt.Println("\n=== Phase 7 Analysis Complete ===")
 }

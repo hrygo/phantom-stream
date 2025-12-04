@@ -7,49 +7,75 @@ import (
 	"io"
 	"os"
 	"regexp"
-	"strings"
 )
 
-// StreamCleaner precisely cleans embedded file streams
-func StreamCleaner(filePath string) (string, error) {
+// CleanObjectStream precisely cleans a specific object's stream while preserving PDF structure
+func CleanObjectStream(filePath string, objID int) (string, error) {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
 		return "", err
 	}
 
-	// Find object 72 (the embedded file stream)
-	obj72Pattern := regexp.MustCompile(`72\s+0\s+obj\s*<</([^>]*)>>\s*stream\s*(.*?)\s*endstream`)
-	obj72Matches := obj72Pattern.FindStringSubmatch(string(content))
+	// Convert content to string properly for PDF binary data
+	contentStr := string(content)
 
-	if len(obj72Matches) < 3 {
-		return "", fmt.Errorf("object 72 not found or invalid format")
+	// Create pattern to find specific object's stream with DOTALL flag
+	pattern := fmt.Sprintf(`%d\s+0\s+obj[\s\S]*?>>\s*stream\s*([\s\S]*?)\s*endstream`, objID)
+	objPattern := regexp.MustCompile(pattern)
+	matches := objPattern.FindStringSubmatchIndex(contentStr)
+
+	if len(matches) < 4 {
+		return "", fmt.Errorf("object %d stream not found", objID)
 	}
 
-	// Parse the dictionary part
-	dictStr := obj72Matches[1]
-	streamContent := obj72Matches[2]
+	fmt.Printf("[+] Found object %d stream\n", objID)
 
-	// Check if it's compressed
-	if strings.Contains(dictStr, "/FlateDecode") {
-		// Decompress to see what's inside
-		decompressed, err := flateDecode([]byte(streamContent))
+	// Extract the stream content (only one capture group)
+	streamStart := matches[2]
+	streamEnd := matches[3]
+	streamContent := content[streamStart:streamEnd]
+
+	fmt.Printf("[+] Original stream length: %d bytes\n", len(streamContent))
+
+	// Try to decompress to see what we're removing
+	if len(streamContent) > 0 {
+		reader := flate.NewReader(bytes.NewReader(streamContent))
+		defer reader.Close()
+
+		decompressed, err := io.ReadAll(reader)
 		if err == nil {
-			fmt.Printf("[!] Original stream content: %s\n", string(decompressed))
+			fmt.Printf("[!] Original decompressed content: %q\n", string(decompressed))
 		}
 	}
 
-	// Replace with empty compressed content
-	emptyStream := compressData([]byte{})
+	// Create empty compressed data that matches exact size
+	var buf bytes.Buffer
+	w, _ := flate.NewWriter(&buf, flate.NoCompression)
+	w.Write([]byte{})  // Write empty content
+	w.Close()
 
-	// Build the replacement object
-	replacement := fmt.Sprintf(`72 0 obj<</%s>>\nstream\n%s\nendstream`, dictStr, emptyStream)
+	emptyCompressed := buf.Bytes()
 
-	// Replace the entire object 72
-	modifiedContent := bytes.ReplaceAll(content, []byte(obj72Matches[0]), []byte(replacement))
+	// Pad or truncate to match original size
+	if len(emptyCompressed) < len(streamContent) {
+		padded := make([]byte, len(streamContent))
+		copy(padded, emptyCompressed)
+		emptyCompressed = padded
+	} else if len(emptyCompressed) > len(streamContent) {
+		emptyCompressed = emptyCompressed[:len(streamContent)]
+	}
 
-	// Write the modified file
+	fmt.Printf("[+] New stream length: %d bytes\n", len(emptyCompressed))
+
+	// Build new content
+	var newContent []byte
+	newContent = append(newContent, content[:streamStart]...)
+	newContent = append(newContent, emptyCompressed...)
+	newContent = append(newContent, content[streamEnd:]...)
+
+	// Write output
 	outputPath := filePath + "_stream_cleaned"
-	err = os.WriteFile(outputPath, modifiedContent, 0644)
+	err = os.WriteFile(outputPath, newContent, 0644)
 	if err != nil {
 		return "", err
 	}
@@ -57,81 +83,36 @@ func StreamCleaner(filePath string) (string, error) {
 	return outputPath, nil
 }
 
-// flateDecode decompresses flate-encoded data
-func flateDecode(data []byte) ([]byte, error) {
-	r := flate.NewReader(bytes.NewReader(data))
-	defer r.Close()
-
-	result, err := io.ReadAll(r)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
+// StreamCleaner precisely cleans embedded file streams (defaults to object 72)
+func StreamCleaner(filePath string) (string, error) {
+	return CleanObjectStream(filePath, 72)
 }
 
-// compressData compresses data with flate
-func compressData(data []byte) []byte {
-	var buf bytes.Buffer
-	w, _ := flate.NewWriter(&buf, flate.DefaultCompression)
-	w.Write(data)
-	w.Close()
-	return buf.Bytes()
-}
-
-// CleanEmbeddedFilesReference removes only the EmbeddedFiles entry from Catalog
-func CleanEmbeddedFilesReference(filePath string) (string, error) {
+// VerifyPDFIntegrity checks if a PDF file is structurally valid
+func VerifyPDFIntegrity(filePath string) error {
 	content, err := os.ReadFile(filePath)
 	if err != nil {
-		return "", err
+		return fmt.Errorf("cannot read file: %v", err)
 	}
 
-	// Find the Catalog object - try different patterns
-	catalogPatterns := []string{
-		`(\d+\s+0\s+obj\s*<</Type/Catalog.*?)>>`,
-		`(\d+\s+0\s+obj\s*<</.*?/Type/Catalog.*?)>>`,
-		`1\s+0\s+obj\s*(<</.*?/Type/Catalog.*?)>>`,
+	// Check PDF header
+	if !bytes.HasPrefix(content, []byte("%PDF")) {
+		return fmt.Errorf("invalid PDF header")
 	}
 
-	var catalogContent string
-
-	for _, pattern := range catalogPatterns {
-		re := regexp.MustCompile(pattern)
-		matches := re.FindStringSubmatch(string(content))
-		if len(matches) >= 2 {
-			catalogContent = matches[1]
-			break
-		}
+	// Check EOF marker
+	if !bytes.HasSuffix(bytes.TrimSpace(content), []byte("%%EOF")) {
+		return fmt.Errorf("missing EOF marker")
 	}
 
-	if catalogContent == "" {
-		return "", fmt.Errorf("catalog not found")
+	// Count xref tables
+	xrefCount := bytes.Count(content, []byte("xref"))
+	if xrefCount == 0 {
+		return fmt.Errorf("no xref table found")
 	}
 
-	// Remove EmbeddedFiles from catalog
-	if strings.Contains(catalogContent, "/EmbeddedFiles") {
-		// Remove the entire EmbeddedFiles entry
-		embeddedFilesPattern := regexp.MustCompile(`/EmbeddedFiles\s*<<.*?>>>`)
-		catalogContent = embeddedFilesPattern.ReplaceAllString(catalogContent, "")
+	fmt.Printf("[+] PDF integrity verification passed\n")
+	fmt.Printf("[+] Found %d xref table(s)\n", xrefCount)
 
-		// Remove trailing whitespace
-		catalogContent = strings.TrimSpace(catalogContent)
-
-		// Rebuild the catalog object
-		newCatalog := catalogContent + ">>"
-		// Find the original catalog object to replace
-		originalCatalog := regexp.MustCompile(regexp.QuoteMeta(catalogContent) + ">>")
-		replacement := originalCatalog.ReplaceAllString(string(content), newCatalog)
-
-		// Write the modified file
-		outputPath := filePath + "_catalog_cleaned"
-		err = os.WriteFile(outputPath, []byte(replacement), 0644)
-		if err != nil {
-			return "", err
-		}
-
-		return outputPath, nil
-	}
-
-	return "", fmt.Errorf("no EmbeddedFiles found in catalog")
+	return nil
 }

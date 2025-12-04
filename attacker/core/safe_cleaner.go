@@ -4,10 +4,24 @@ import (
 	"bytes"
 	"compress/flate"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
 	"strings"
 )
+
+// flateDecode decompresses flate-encoded data
+func flateDecode(data []byte) ([]byte, error) {
+	r := flate.NewReader(bytes.NewReader(data))
+	defer r.Close()
+
+	result, err := io.ReadAll(r)
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
+}
 
 // SafeCleaner performs safe cleaning without corrupting the PDF
 type SafeCleaner struct {
