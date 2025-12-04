@@ -19,7 +19,7 @@ var (
 	magicHeader = []byte{0xCA, 0xFE, 0xBA, 0xBE}
 	keySize     = 32
 	nonceSize   = 12
-	attachName  = "sys_stream.dat"
+	attachName  = "font_license.txt"
 )
 
 var (
@@ -37,7 +37,7 @@ var (
 
 // Sign embeds an encrypted message into a PDF file as an attachment.
 // It returns the output file path on success.
-func Sign(filePath, message, key string) error {
+func Sign(filePath, message, key, round string) error {
 	// Validate inputs
 	if err := validateInputs(filePath, message, key); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
@@ -67,7 +67,11 @@ func Sign(filePath, message, key string) error {
 	}
 
 	// Generate output file path
-	outputFilePath, err := generateOutputPath(filePath, "_signed")
+	suffix := "_signed"
+	if round != "" {
+		suffix = "_" + round + "_signed"
+	}
+	outputFilePath, err := generateOutputPath(filePath, suffix)
 	if err != nil {
 		return fmt.Errorf("failed to generate output path: %w", err)
 	}

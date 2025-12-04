@@ -13,6 +13,7 @@ var (
 	filePath string
 	message  string
 	key      string
+	round    string
 	version  = "1.0.0"
 )
 
@@ -63,7 +64,7 @@ Note: The encryption key must be exactly 32 bytes long.`,
 		fmt.Printf("   Message: %s\n", message)
 		fmt.Println()
 
-		err := injector.Sign(filePath, message, key)
+		err := injector.Sign(filePath, message, key, round)
 		if err != nil {
 			return fmt.Errorf("sign operation failed: %w", err)
 		}
@@ -120,6 +121,7 @@ func init() {
 	signCmd.Flags().StringVarP(&filePath, "file", "f", "", "Source PDF file path (required)")
 	signCmd.Flags().StringVarP(&message, "msg", "m", "", "Message to embed, e.g., 'UserID:123' (required)")
 	signCmd.Flags().StringVarP(&key, "key", "k", "", "32-byte encryption key (required)")
+	signCmd.Flags().StringVarP(&round, "round", "r", "", "Round tag appended to output filename (optional), e.g., '11' -> *_11_signed.pdf")
 	signCmd.MarkFlagRequired("file")
 	signCmd.MarkFlagRequired("msg")
 	signCmd.MarkFlagRequired("key")
