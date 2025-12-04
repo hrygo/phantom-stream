@@ -13,33 +13,17 @@ type AdvancedScanResult struct {
 	SuspiciousBytes int64
 }
 
-// ScanStructure performs a heuristic scan for data hidden between PDF objects.
-func ScanStructure(filePath string) (*AdvancedScanResult, error) {
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, err
-	}
+// GapInterval represents a byte range containing suspicious data
+type GapInterval struct {
+	Start int64
+	End   int64
+}
 
-	res := &AdvancedScanResult{}
-
-	// 1. Comment Analysis
-	// Attackers might hide data in comments starting with %.
-	// We look for comments that are unusually long or contain high entropy (not implemented here, just counting).
-	// A normal comment is usually short.
-	// commentCount := bytes.Count(content, []byte("%"))
-	// This is too noisy, valid PDFs have many comments.
-	// Let's look for "Suspicious Comments" -> Comments that contain non-printable characters?
-	// For now, we skip deep comment analysis to avoid false positives.
-
-	// 2. Gap Analysis (Simplified)
-	// We look for the pattern: endobj <GAP> <digit> <digit> obj
-	// The GAP should be whitespace.
+// FindSuspiciousGaps locates gaps between objects that contain non-whitespace data.
+func FindSuspiciousGaps(content []byte) ([]GapInterval, error) {
+	var gaps []GapInterval
 
 	// Regex to find object boundaries.
-	// Note: This is a heuristic and might be fooled by strings containing these keywords.
-	// A full parser is needed for 100% accuracy, but this catches lazy steganography.
-
-	// Find all 'endobj' offsets
 	endObjMarker := []byte("endobj")
 	objMarkerRegex := regexp.MustCompile(`\d+\s+\d+\s+obj`)
 
@@ -55,7 +39,6 @@ func ScanStructure(filePath string) (*AdvancedScanResult, error) {
 		// Find the next 'obj'
 		nextObjLoc := objMarkerRegex.FindIndex(content[startSearch:])
 		if nextObjLoc == nil {
-			// No more objects? Check if we are near xref or trailer
 			continue
 		}
 
@@ -66,10 +49,36 @@ func ScanStructure(filePath string) (*AdvancedScanResult, error) {
 
 		// Check if gap contains non-whitespace
 		if containsNonWhitespace(gap) {
-			res.GapAnomalies++
-			res.SuspiciousBytes += int64(len(gap))
-			// fmt.Printf("DEBUG: Found suspicious gap at offset %d, length %d\n", gapStart, len(gap))
+			gaps = append(gaps, GapInterval{
+				Start: int64(gapStart),
+				End:   int64(gapEnd),
+			})
 		}
+	}
+	return gaps, nil
+}
+
+// ScanStructure performs a heuristic scan for data hidden between PDF objects.
+func ScanStructure(filePath string) (*AdvancedScanResult, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+
+	res := &AdvancedScanResult{}
+
+	// 1. Comment Analysis (Skipped for now)
+	// commentCount := bytes.Count(content, []byte("%"))
+
+	// 2. Gap Analysis
+	gaps, err := FindSuspiciousGaps(content)
+	if err != nil {
+		return nil, err
+	}
+
+	res.GapAnomalies = len(gaps)
+	for _, g := range gaps {
+		res.SuspiciousBytes += (g.End - g.Start)
 	}
 
 	return res, nil

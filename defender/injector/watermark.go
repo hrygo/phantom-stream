@@ -4,38 +4,32 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"path/filepath"
-	"bytes"
+
+	"github.com/pdfcpu/pdfcpu/pkg/api"
+	// "github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model" // Unused
+	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 )
 
 var (
 	magicHeader = []byte{0xCA, 0xFE, 0xBA, 0xBE} // Magic Header for identifying hidden data
-	// eofMarker   = []byte("%%EOF")                      // PDF End Of File marker
 	keySize     = 32                               // AES-256 key size in bytes
 	nonceSize   = 12                               // GCM standard nonce size
+	metaKey     = "PStream"                        // Key for custom metadata
 )
 
-// Sign embeds an encrypted message into a PDF file.
-// It takes the path to the source PDF, the message to embed, and an encryption key.
-// A new PDF file named "{original_filename}_signed.pdf" will be created.
+// Sign embeds an encrypted message into PDF metadata by directly modifying the Info dictionary.
 func Sign(filePath, message, key string) error {
-	// 1. Key validation
 	if len(key) != keySize {
 		return fmt.Errorf("encryption key must be %d bytes long", keySize)
 	}
 	encryptionKey := []byte(key)
 
-	// 2. Read original PDF content
-	originalPDF, err := ioutil.ReadFile(filePath)
-	if err != nil {
-		return fmt.Errorf("failed to read original PDF file: %w", err)
-	}
-
-	// 3. Create AES-256-GCM cipher
+	// 1. Create AES-256-GCM cipher
 	block, err := aes.NewCipher(encryptionKey)
 	if err != nil {
 		return fmt.Errorf("failed to create AES cipher: %w", err)
@@ -45,106 +39,181 @@ func Sign(filePath, message, key string) error {
 		return fmt.Errorf("failed to create GCM cipher: %w", err)
 	}
 
-	// 4. Generate random Nonce
+	// 2. Generate random Nonce
 	nonce := make([]byte, nonceSize)
 	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return fmt.Errorf("failed to generate nonce: %w", err)
 	}
 
-	// 5. Encrypt the message
-	// The GCM seal function appends the authentication tag to the ciphertext.
+	// 3. Encrypt the message
 	encryptedMessage := gcm.Seal(nil, nonce, []byte(message), nil)
 
-	// 6. Build Payload: Magic Header + Nonce + Encrypted Message
-	payload := make([]byte, 0, len(magicHeader)+len(nonce)+len(encryptedMessage))
-	payload = append(payload, magicHeader...)
-	payload = append(payload, nonce...)
-	payload = append(payload, encryptedMessage...)
+	// 4. Build Raw Payload: Magic Header + Nonce + Encrypted Message
+	rawPayload := make([]byte, 0, len(magicHeader)+len(nonce)+len(encryptedMessage))
+	rawPayload = append(rawPayload, magicHeader...)
+	rawPayload = append(rawPayload, nonce...)
+	rawPayload = append(rawPayload, encryptedMessage...)
 
-	// 7. Combine original PDF with newline and Payload
-	// Add a newline to ensure %%EOF is on its own line before the payload
-	finalContent := make([]byte, 0, len(originalPDF)+1+len(payload))
-	finalContent = append(finalContent, originalPDF...)
-	finalContent = append(finalContent, '\n') // Add newline as per PRD
-	finalContent = append(finalContent, payload...)
+	// 5. Encode Payload to Hex String
+	payloadHex := hex.EncodeToString(rawPayload)
 
-	// 8. Write to new file
+	// 6. Load PDF Context
+	ctx, err := api.ReadContextFile(filePath)
+	if err != nil {
+		return fmt.Errorf("failed to read PDF context: %w", err)
+	}
+
+	// 7. Inject Metadata into Info Dictionary
+	var infoDict types.Dict
+
+	if ctx.Info == nil {
+		// Create new Info dictionary
+		infoDict = types.NewDict()
+		indRef, err := ctx.XRefTable.IndRefForNewObject(infoDict)
+		if err != nil {
+			return fmt.Errorf("failed to create new object for Info dict: %w", err)
+		}
+		ctx.Info = indRef
+	} else {
+		// Dereference existing Info dictionary
+		obj, err := ctx.XRefTable.Dereference(ctx.Info)
+		if err != nil {
+			return fmt.Errorf("failed to dereference Info dict: %w", err)
+		}
+		// Resolve any further indirect references
+		for {
+			if indRef, ok := obj.(*types.IndirectRef); ok {
+				obj, err = ctx.XRefTable.Dereference(*indRef)
+				if err != nil {
+					return fmt.Errorf("failed to dereference Info dict chain: %w", err)
+				}
+			} else {
+				break
+			}
+		}
+		var ok bool
+		infoDict, ok = obj.(types.Dict)
+		if !ok {
+			return fmt.Errorf("Info object is not a dictionary, it is %T", obj)
+		}
+	}
+
+	// Set custom property
+	infoDict[metaKey] = types.StringLiteral(payloadHex)
+
+	fmt.Printf("DEBUG: Injected metadata key '%s' with payload length %d\n", metaKey, len(payloadHex))
+
+	// 8. Write modified PDF to a new file (WriteContextFile creates a fresh PDF, effectively Optimizing)
 	outputFileName := fmt.Sprintf("%s_signed.pdf", filepath.Base(filePath)[:len(filepath.Base(filePath))-len(filepath.Ext(filePath))])
 	outputFilePath := filepath.Join(filepath.Dir(filePath), outputFileName)
 
-	if err := ioutil.WriteFile(outputFilePath, finalContent, 0644); err != nil {
-		return fmt.Errorf("failed to write signed PDF file: %w", err)
+	if err := api.WriteContextFile(ctx, outputFilePath); err != nil {
+		return fmt.Errorf("failed to write modified PDF: %w", err)
 	}
 
 	return nil
 }
 
-// Verify extracts and verifies a hidden message from a PDF file.
-// It returns the extracted message or an error if verification fails.
+// Verify extracts and verifies a hidden message from PDF metadata using manual context inspection.
 func Verify(filePath, key string) (string, error) {
-	// 1. Key validation
 	if len(key) != keySize {
 		return "", fmt.Errorf("decryption key must be %d bytes long", keySize)
 	}
 	decryptionKey := []byte(key)
 
-	// 2. Read PDF file content
-	signedPDF, err := ioutil.ReadFile(filePath)
+	// 1. Read Context
+	ctx, err := api.ReadContextFile(filePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read signed PDF file: %w", err)
+		return "", fmt.Errorf("failed to read PDF context: %w", err)
 	}
 
-	// 3. Find the last %%EOF marker
-	eofIndex := bytes.LastIndex(signedPDF, []byte("%%EOF"))
-	if eofIndex == -1 {
-		return "", errors.New("no %%EOF marker found in the file, likely not a valid PDF or tampered")
-	}
+	// 2. Extract Metadata from Info Dictionary
+	var payloadHex string
+	
+	if ctx.Info != nil {
+		// Dereference the Info object
+		obj, err := ctx.XRefTable.Dereference(ctx.Info)
+		if err != nil {
+			return "", fmt.Errorf("failed to dereference Info dict: %w", err)
+		}
+		
+		// Resolve any further indirect references
+		for {
+			if indRef, ok := obj.(*types.IndirectRef); ok {
+				obj, err = ctx.XRefTable.Dereference(*indRef)
+				if err != nil {
+					return "", fmt.Errorf("failed to dereference Info dict chain: %w", err)
+				}
+			} else {
+				break
+			}
+		}
 
-	// Find the start of the payload after the last %%EOF marker.
-	// The payload starts with magicHeader. We need to locate it after %%EOF.
-	payloadStart := -1
-	searchStart := eofIndex + len("%%EOF")
-
-	// Iterate from searchStart to find the magicHeader
-	for i := searchStart; i <= len(signedPDF)-len(magicHeader); i++ {
-		if bytes.Equal(signedPDF[i:i+len(magicHeader)], magicHeader) {
-			payloadStart = i
-			break
+		if infoDict, ok := obj.(types.Dict); ok {
+			// Look for our key
+			if val, ok := infoDict[metaKey]; ok {
+				// Let's try casting to specific types for cleaner extraction
+				switch v := val.(type) {
+				case types.StringLiteral:
+					payloadHex = v.Value()
+				case types.HexLiteral:
+					payloadHex = v.Value()
+				default:
+					// Fallback to String() and strip delimiters
+					s := val.String()
+					if len(s) > 2 && s[0] == '(' && s[len(s)-1] == ')' {
+						payloadHex = s[1 : len(s)-1]
+					} else if len(s) > 2 && s[0] == '<' && s[len(s)-1] == '>' {
+						payloadHex = s[1 : len(s)-1]
+					} else {
+						payloadHex = s
+					}
+				}
+			}
 		}
 	}
 
-	if payloadStart == -1 {
-		return "", errors.New("magic header not found after %%EOF marker")
+	if payloadHex == "" {
+		return "", errors.New("metadata key not found")
 	}
 
-	potentialPayload := signedPDF[payloadStart:]
+	// fmt.Printf("DEBUG: Found metadata raw: %s\n", payloadHex)
 
-	// 4. Validate payload length and Magic Header
-	fmt.Printf("DEBUG: Potential payload starts with: %x\n", potentialPayload[:min(len(potentialPayload), 16)])
-	if len(potentialPayload) < len(magicHeader)+nonceSize {
-		return "", errors.New("payload too short to contain magic header and nonce")
+	// 3. Decode Hex
+	rawPayload, err := hex.DecodeString(payloadHex)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode hex payload: %w", err)
 	}
 
-	// The magic header check is now implicitly part of finding payloadStart, but we keep it for redundancy and clarity.
-	if !bytes.Equal(potentialPayload[0:len(magicHeader)], magicHeader) {
-		return "", errors.New("magic header mismatch, should not happen if payloadStart is correct")
+	// 4. Verify Magic Header
+	if len(rawPayload) < len(magicHeader) {
+		return "", errors.New("payload too short for magic header")
+	}
+	
+	for i := range magicHeader {
+		if rawPayload[i] != magicHeader[i] {
+			return "", errors.New("magic header mismatch")
+		}
 	}
 
 	// 5. Extract Nonce and Ciphertext
-	nonce := potentialPayload[len(magicHeader) : len(magicHeader)+nonceSize]
-	encryptedMessage := potentialPayload[len(magicHeader)+nonceSize:]
+	if len(rawPayload) < len(magicHeader)+nonceSize {
+		return "", errors.New("payload too short")
+	}
 
-	// 6. Create AES-256-GCM cipher
+	nonce := rawPayload[len(magicHeader) : len(magicHeader)+nonceSize]
+	encryptedMessage := rawPayload[len(magicHeader)+nonceSize:]
+
+	// 6. Decrypt
 	block, err := aes.NewCipher(decryptionKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to create AES cipher for decryption: %w", err)
+		return "", fmt.Errorf("failed to create AES cipher: %w", err)
 	}
 	gcm, err := cipher.NewGCM(block)
 	if err != nil {
-		return "", fmt.Errorf("failed to create GCM cipher for decryption: %w", err)
+		return "", fmt.Errorf("failed to create GCM cipher: %w", err)
 	}
 
-	// 7. Decrypt the message
 	decryptedMessage, err := gcm.Open(nil, nonce, encryptedMessage, nil)
 	if err != nil {
 		return "", fmt.Errorf("failed to decrypt message: %w", err)
