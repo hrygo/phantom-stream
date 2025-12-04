@@ -1,4 +1,4 @@
-.PHONY: help build clean test test-verbose run-sign run-verify install lint fmt vet check dev-deps deliver-red notify-red
+.PHONY: help build clean test test-verbose test-integration bench-integration run-sign run-verify install lint fmt vet check dev-deps deliver-red notify-red
 
 # 默认目标
 .DEFAULT_GOAL := help
@@ -15,6 +15,18 @@ SOURCE_PDF=../docs/2511.17467v2.pdf
 OUTPUT_DIR=../docs
 DEFAULT_KEY=12345678901234567890123456789012
 ROUND?=R3
+
+# 可覆盖的密钥（默认使用 DEFAULT_KEY）
+KEY?=$(DEFAULT_KEY)
+
+# 路径派生变量（基于 SOURCE_PDF 派生签名文件路径）
+SRC_DIR := $(dir $(SOURCE_PDF))
+SRC_BASE := $(notdir $(SOURCE_PDF))
+SRC_NAME := $(basename $(SRC_BASE))
+SIGNED_FILE := $(SRC_DIR)$(SRC_NAME)_$(ROUND)_signed.pdf
+
+# 输出目录默认与源文件目录一致（如需另存，可覆盖 OUTPUT_DIR）
+OUTPUT_DIR?=$(SRC_DIR)
 
 # 颜色输出
 COLOR_RESET=\033[0m
@@ -56,6 +68,17 @@ test-verbose: ## 运行详细测试
 	@echo "$(COLOR_YELLOW)🧪 运行详细测试...$(COLOR_RESET)"
 	@$(GO) test ./... -v -cover -coverprofile=coverage.out
 	@echo "$(COLOR_GREEN)✅ 测试完成$(COLOR_RESET)"
+
+# 集成测试（需要启用 build tag）
+test-integration: ## 运行集成测试（需启用 build tag）
+	@echo "$(COLOR_YELLOW)🧪 运行集成测试...$(COLOR_RESET)"
+	@$(GO) test ./... -tags=integration -v
+	@echo "$(COLOR_GREEN)✅ 集成测试完成$(COLOR_RESET)"
+
+bench-integration: ## 运行集成基准测试（需启用 build tag）
+	@echo "$(COLOR_YELLOW)⚡ 运行集成基准测试...$(COLOR_RESET)"
+	@$(GO) test ./... -tags=integration -bench=. -benchmem
+	@echo "$(COLOR_GREEN)✅ 集成基准测试完成$(COLOR_RESET)"
 
 test-coverage: ## 生成测试覆盖率报告
 	@echo "$(COLOR_YELLOW)📊 生成覆盖率报告...$(COLOR_RESET)"
@@ -150,16 +173,16 @@ deliver-red: build ## 生成红方交付文件 (可通过 ROUND=R3 指定轮次)
 	@echo "   消息: Defender:Phase7-$(ROUND)"
 	@echo ""
 	@echo "$(COLOR_YELLOW)🔨 步骤 1/3: 生成签名文件...$(COLOR_RESET)"
-	@$(BUILD_DIR)/$(BINARY_NAME) sign -f $(SOURCE_PDF) -m "Defender:Phase7-$(ROUND)" -k "$(DEFAULT_KEY)" -r $(ROUND)
+	@$(BUILD_DIR)/$(BINARY_NAME) sign -f $(SOURCE_PDF) -m "Defender:Phase7-$(ROUND)" -k "$(KEY)" -r $(ROUND)
 	@echo ""
 	@echo "$(COLOR_YELLOW)🔍 步骤 2/3: 验证签名...$(COLOR_RESET)"
-	@$(BUILD_DIR)/$(BINARY_NAME) verify -f $(OUTPUT_DIR)/2511.17467v2_$(ROUND)_signed.pdf -k "$(DEFAULT_KEY)"
+	@$(BUILD_DIR)/$(BINARY_NAME) verify -f $(SIGNED_FILE) -k "$(KEY)"
 	@echo ""
 	@echo "$(COLOR_YELLOW)📊 步骤 3/3: 文件信息...$(COLOR_RESET)"
-	@ls -lh $(OUTPUT_DIR)/2511.17467v2_$(ROUND)_signed.pdf | awk '{print "   文件大小:", $$5}'
+	@ls -lh $(SIGNED_FILE) | awk '{print "   文件大小:", $$5}'
 	@echo ""
 	@echo "$(COLOR_GREEN)✅ 交付文件生成完成!$(COLOR_RESET)"
-	@echo "$(COLOR_GREEN)📁 文件路径: $(OUTPUT_DIR)/2511.17467v2_$(ROUND)_signed.pdf$(COLOR_RESET)"
+	@echo "$(COLOR_GREEN)📁 文件路径: $(SIGNED_FILE)$(COLOR_RESET)"
 	@echo ""
 	@echo "$(COLOR_BOLD)$(COLOR_YELLOW)💡 下一步: 运行 'make notify-red ROUND=$(ROUND)' 发送通知消息$(COLOR_RESET)"
 	@echo "$(COLOR_BOLD)$(COLOR_BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
@@ -180,8 +203,8 @@ notify-red: ## 显示红方通知消息 (可通过 ROUND=R3 指定轮次)
 	@echo "$(COLOR_BOLD)$(COLOR_GREEN)## 📋 本轮交付信息$(COLOR_RESET)"
 	@echo ""
 	@echo "$(COLOR_BOLD)轮次$(COLOR_RESET)：$(ROUND)"
-	@echo "$(COLOR_BOLD)交付文件$(COLOR_RESET)：docs/2511.17467v2_$(ROUND)_signed.pdf"
-	@ls -lh $(OUTPUT_DIR)/2511.17467v2_$(ROUND)_signed.pdf 2>/dev/null | awk '{print "$(COLOR_BOLD)文件大小$(COLOR_RESET)：", $$5}' || echo "$(COLOR_BOLD)文件大小$(COLOR_RESET)：文件未生成，请先运行 'make deliver-red'"
+	@echo "$(COLOR_BOLD)交付文件$(COLOR_RESET)：$(SIGNED_FILE)"
+	@ls -lh $(SIGNED_FILE) 2>/dev/null | awk '{print "$(COLOR_BOLD)文件大小$(COLOR_RESET)：", $$5}' || echo "$(COLOR_BOLD)文件大小$(COLOR_RESET)：文件未生成，请先运行 'make deliver-red'"
 	@echo "$(COLOR_BOLD)状态$(COLOR_RESET)：已完成防护处理"
 	@echo ""
 	@echo "$(COLOR_BOLD)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"

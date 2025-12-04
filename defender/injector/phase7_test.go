@@ -1,3 +1,6 @@
+//go:build integration
+// +build integration
+
 package injector
 
 import (
@@ -11,7 +14,7 @@ import (
 
 // Test constants for Phase 7
 const (
-	testPDFPath = "../../docs/2511.17467v2.pdf"
+	testPDFPath = "../testdata/2511.17467v2.pdf"
 )
 
 // TestPhase7DualAnchorSign tests the dual-anchor signature mechanism
