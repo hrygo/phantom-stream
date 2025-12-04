@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"os"
 
 	"defender/injector"
@@ -14,14 +13,21 @@ var (
 	filePath string
 	message  string
 	key      string
+	version  = "1.0.0"
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "defender",
-	Short: "Defender is a tool for embedding and verifying hidden information in PDF files.",
-	Long: `Defender is a CLI tool that allows you to embed encrypted identification
-information into PDF files without disrupting the reading experience, and
-to extract and verify this information later.`,
+	Short: "Defender - PDF watermark embedding and verification tool",
+	Long: `Defender is a CLI tool for embedding encrypted tracking information 
+into PDF files without disrupting the reading experience.
+
+This tool is part of the PhantomStream defense system and uses 
+PDF embedded attachments to ensure tracking information survives 
+advanced cleaning attacks.
+
+Version: ` + version,
+	Version: version,
 	Run: func(cmd *cobra.Command, args []string) {
 		cmd.Help()
 	},
@@ -29,38 +35,79 @@ to extract and verify this information later.`,
 
 var signCmd = &cobra.Command{
 	Use:   "sign",
-	Short: "Embed encrypted message into a PDF file.",
-	Long: `The sign command reads a source PDF file, encrypts a user-specified
-string (e.g., employee ID), and embeds it at the end of the file.`,
+	Short: "Embed encrypted tracking message into a PDF file",
+	Long: `The sign command embeds an encrypted message (e.g., employee ID, 
+tracking code) into a PDF file as a hidden attachment.
+
+The original PDF remains fully readable, and the tracking information 
+can only be extracted with the correct decryption key.
+
+Example:
+  defender sign -f report.pdf -m "UserID:12345" -k "MySecretKey32BytesLongString!!"
+
+Note: The encryption key must be exactly 32 bytes long.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if filePath == "" || message == "" || key == "" {
-			return fmt.Errorf("all flags --file, --msg, and --key are required")
+		// Validate required flags
+		if filePath == "" {
+			return fmt.Errorf("required flag --file is missing")
 		}
-		fmt.Printf("Attempting to sign file: %s with message: %s\n", filePath, message)
+		if message == "" {
+			return fmt.Errorf("required flag --msg is missing")
+		}
+		if key == "" {
+			return fmt.Errorf("required flag --key is missing")
+		}
+
+		fmt.Printf("🛡️  Defender Sign Operation\n")
+		fmt.Printf("   File: %s\n", filePath)
+		fmt.Printf("   Message: %s\n", message)
+		fmt.Println()
+
 		err := injector.Sign(filePath, message, key)
 		if err != nil {
-			return fmt.Errorf("failed to sign file: %w", err)
+			return fmt.Errorf("sign operation failed: %w", err)
 		}
-		fmt.Printf("Successfully signed file: %s_signed.pdf\n", filePath)
+
+		fmt.Println("\n✅ Sign operation completed successfully!")
 		return nil
 	},
 }
 
 var verifyCmd = &cobra.Command{
 	Use:   "verify",
-	Short: "Extract and verify hidden message from a PDF file.",
-	Long: `The verify command attempts to read hidden data from a PDF, decrypt it,
-and verify its integrity.`,
+	Short: "Extract and verify hidden tracking message from a PDF file",
+	Long: `The verify command extracts the embedded tracking message from a 
+signed PDF file and decrypts it using the provided key.
+
+This operation will fail if:
+  - The file does not contain an embedded tracking message
+  - The decryption key is incorrect
+  - The file has been cleaned or modified
+
+Example:
+  defender verify -f report_signed.pdf -k "MySecretKey32BytesLongString!!"
+
+Note: The decryption key must match the one used during signing.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if filePath == "" || key == "" {
-			return fmt.Errorf("both flags --file and --key are required")
+		// Validate required flags
+		if filePath == "" {
+			return fmt.Errorf("required flag --file is missing")
 		}
-		fmt.Printf("Attempting to verify file: %s\n", filePath)
+		if key == "" {
+			return fmt.Errorf("required flag --key is missing")
+		}
+
+		fmt.Printf("🔍 Defender Verify Operation\n")
+		fmt.Printf("   File: %s\n", filePath)
+		fmt.Println()
+
 		extractedMsg, err := injector.Verify(filePath, key)
 		if err != nil {
-			return fmt.Errorf("failed to verify file: %w", err)
+			return fmt.Errorf("verify operation failed: %w", err)
 		}
-		fmt.Printf("Verification successful. Extracted message: \"%s\"\n", extractedMsg)
+
+		fmt.Println("✅ Verification successful!")
+		fmt.Printf("📋 Extracted message: \"%s\"\n", extractedMsg)
 		return nil
 	},
 }
@@ -69,21 +116,28 @@ func init() {
 	rootCmd.AddCommand(signCmd)
 	rootCmd.AddCommand(verifyCmd)
 
-	signCmd.Flags().StringVarP(&filePath, "file", "f", "", "Source PDF file path")
-	signCmd.Flags().StringVarP(&message, "msg", "m", "", "Message to embed (e.g., EmployeeID:123)")
-	signCmd.Flags().StringVarP(&key, "key", "k", "", "Encryption key")
+	// Sign command flags
+	signCmd.Flags().StringVarP(&filePath, "file", "f", "", "Source PDF file path (required)")
+	signCmd.Flags().StringVarP(&message, "msg", "m", "", "Message to embed, e.g., 'UserID:123' (required)")
+	signCmd.Flags().StringVarP(&key, "key", "k", "", "32-byte encryption key (required)")
+	signCmd.MarkFlagRequired("file")
+	signCmd.MarkFlagRequired("msg")
+	signCmd.MarkFlagRequired("key")
 
-	verifyCmd.Flags().StringVarP(&filePath, "file", "f", "", "Target PDF file path")
-	verifyCmd.Flags().StringVarP(&key, "key", "k", "", "Decryption key")
+	// Verify command flags
+	verifyCmd.Flags().StringVarP(&filePath, "file", "f", "", "Target PDF file path (required)")
+	verifyCmd.Flags().StringVarP(&key, "key", "k", "", "32-byte decryption key (required)")
+	verifyCmd.MarkFlagRequired("file")
+	verifyCmd.MarkFlagRequired("key")
 }
 
-func Execute() {
-	if err := rootCmd.Execute(); err != nil {
-		log.SetOutput(os.Stderr)
-		log.Fatalf("Error: %v", err)
-	}
+func Execute() error {
+	return rootCmd.Execute()
 }
 
 func main() {
-	Execute()
+	if err := Execute(); err != nil {
+		fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n", err)
+		os.Exit(1)
+	}
 }

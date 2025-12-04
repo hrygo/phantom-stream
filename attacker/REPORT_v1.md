@@ -1,6 +1,6 @@
 # [红队] 行动报告: PhantomStream
 
-**版本**: v1.2
+**版本**: v1.6
 **日期**: 2025-12-04
 **操作员**: Attacker (红队)
 
@@ -31,13 +31,27 @@ graph TD
     D3 -->|被检测| A3[红队: 版本回滚]
     end
     
+    subgraph Phase4 [阶段四]
+    A3 -->|迫使进化| D4[蓝队: 僵尸对象/元数据]
+    D4 -->|被检测| A4[红队: 图谱修剪]
+    end
+
+    subgraph Phase6 [阶段六]
+    A4 -->|迫使进化| D6[蓝队: 附件注入]
+    D6 -->|绕过| A6[红队: 语义盲区]
+    end
+    
     style D1 fill:#f9f,stroke:#333,stroke-width:2px
     style D2 fill:#f9f,stroke:#333,stroke-width:2px
     style D3 fill:#f9f,stroke:#333,stroke-width:2px
+    style D4 fill:#f9f,stroke:#333,stroke-width:2px
+    style D6 fill:#f9f,stroke:#333,stroke-width:2px
     
     style A1 fill:#9ff,stroke:#333,stroke-width:2px
     style A2 fill:#9ff,stroke:#333,stroke-width:2px
     style A3 fill:#9ff,stroke:#333,stroke-width:2px
+    style A4 fill:#9ff,stroke:#333,stroke-width:2px
+    style A6 fill:#ff9,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5
 ```
 
 ### 阶段一："尾部"时代 (EOF 追加)
@@ -57,6 +71,18 @@ graph TD
 *   **我方响应**: 开发 `Rollback` (回滚) 工具。
 *   **技术细节**: 检测多个 `%%EOF` 标记，识别修订历史。无论载荷如何伪装（如 Zlib 压缩），只要存在于新修订中，均通过强制回滚物理移除。
 *   **结果**: **完胜 (VICTORY)**。成功处置 "Zlib Aware" 变种样本。
+
+### 阶段四："僵尸"时代 (僵尸对象/元数据)
+*   **对手战术**: 将数据隐藏在未被引用的 "僵尸对象" 或非必要元数据中，并扁平化文件结构以抵抗回滚。
+*   **我方响应**: 开发 `Graph Analyzer` (图谱分析) 和 `Prune` (修剪) 工具。
+*   **技术细节**: 构建全量引用图谱，并引入“启发式白名单”与“流对象保护”机制，在无法解析 Object Streams 的盲测环境下，精准区分系统组件与僵尸对象。
+*   **结果**: **完胜 (VICTORY)**。成功清除 30 个高可疑度僵尸对象，同时修复了误删导致的文件损坏问题。
+
+### 阶段六："带内"时代 (附件注入)
+*   **对手战术**: 将载荷封装为合法的 PDF 附件 (Embedded Files)，使其在引用图谱中 "可达" 且结构合法。
+*   **我方响应**: 执行 `Prune` (图谱修剪)。
+*   **技术细节**: 僵尸对象修剪工具基于“结构可达性”工作。由于附件被 Catalog 正常引用，工具将其视为合法组件予以保留。
+*   **结果**: **失败 (FAILURE)**。核心载荷幸存。当前工具链无法区分“恶意附件”与“正常附件”，必须引入语义分析。
 
 ## 4. 技术分析 (Technical Analysis)
 
@@ -92,6 +118,29 @@ graph TD
 | 新 Trailer       |
 | %%EOF            |
 +------------------+
+
+[ 阶段四: 僵尸对象 ]
++------------------+
+| 1 0 obj (有效)   |
++------------------+
+| 99 0 obj (僵尸)  | <--- 攻击: 修剪 (Graph Analysis)
+| [隐藏数据]       |      (从 Root 不可达)
++------------------+
+| 2 0 obj (有效)   |
++------------------+
+
+[ 阶段六: 附件注入 ]
++------------------+
+| Catalog          |
+|  \-> Names       |
+|      \-> Embed...|
+|          |       |
+|          v       |
+| +--------------+ |
+| | FileSpec     | | <--- 攻击无效: 结构合法且可达
+| |  \-> Stream  | |      (Prune 必须保留)
+| +--------------+ |
++------------------+
 ```
 
 ## 5. 工具链状态 (Toolchain Status)
@@ -101,6 +150,8 @@ graph TD
 *   `clean`: 基础尾部截断。
 *   `sanitize`: 对象间隙覆写 (针对 Phase 2)。
 *   `rollback`: 版本回滚 (针对 Phase 3)。
+*   `prune`: 僵尸对象修剪 (针对 Phase 4)。
 
 ## 6. 结论与展望 (Conclusion & Outlook)
-红队通过快速适应和对 PDF 内部结构的深刻理解，保持了压倒性优势。通过将重点从"模式匹配"转移到"结构完整性验证"，我们使蓝队的隐蔽工作变得越来越困难。我们随时准备应对下一次升级。
+## 6. 结论与展望 (Conclusion & Outlook)
+红队通过快速适应和对 PDF 内部结构的深刻理解，在 Phase 1-4 保持了压倒性优势。然而，Phase 6 标志着对抗进入了 **语义层 (Semantic Layer)**。蓝队成功利用了盲测工具对 "合法结构"（如附件）的信任。未来的红队工具必须具备 **语义级清洗** 能力（如附件白名单、内容流审计），但这将面临可用性与安全性的艰难权衡。

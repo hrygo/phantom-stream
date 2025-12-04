@@ -75,21 +75,55 @@ func AnalyzeObjectGraph(filePath string) (*GraphResult, error) {
 		}
 	}
 
-	// 2. Find Root (Trailer)
-	// The trailer contains "/Root X Y R"
-	trailerRegex := regexp.MustCompile(`/Root\s+(\d+)\s+(\d+)\s+R`)
-	rootMatch := trailerRegex.FindSubmatch(content)
+	// 2. Find Trailer and extract all references (Root, Info, Encrypt, etc.)
+	// Trailer format: "trailer << ... >>" or just "<< ... >>" at the end (for XRef streams)
+	// Simple heuristic: Find "trailer" keyword, then read the dictionary.
+	// Or just search for /Root and /Info specifically.
 
-	if rootMatch == nil {
-		return nil, fmt.Errorf("could not find /Root in trailer")
+	// Let's be more robust: Search for the trailer dictionary block.
+	trailerStartRegex := regexp.MustCompile(`trailer\s*<<`)
+	trailerLoc := trailerStartRegex.FindIndex(content)
+
+	var initialRefs []int
+
+	if trailerLoc != nil {
+		// We found a standard trailer. Let's scan for references in the following bytes until "startxref"
+		startPos := trailerLoc[1]
+		endPos := len(content)
+
+		startXRefRegex := regexp.MustCompile(`startxref`)
+		sxLoc := startXRefRegex.FindIndex(content[startPos:])
+		if sxLoc != nil {
+			endPos = startPos + sxLoc[0]
+		}
+
+		trailerContent := content[startPos:endPos]
+		initialRefs = findReferences(trailerContent)
+	} else {
+		// Maybe it's a stream-based PDF (XRef stream). The trailer is inside the XRef stream dict.
+		// But we can't easily parse that without a real parser.
+		// Fallback: Scan the last 1KB of the file for /Root and /Info manually.
+		// This is a "Blind Test" heuristic.
+		tailSize := 2048
+		if len(content) < tailSize {
+			tailSize = len(content)
+		}
+		tail := content[len(content)-tailSize:]
+
+		initialRefs = findReferences(tail)
 	}
 
-	rootID, _ := strconv.Atoi(string(rootMatch[1]))
+	if len(initialRefs) == 0 {
+		return nil, fmt.Errorf("could not find any references in trailer (Root/Info)")
+	}
 
 	// 3. Traverse Graph (BFS)
 	visited := make(map[int]bool)
-	queue := []int{rootID}
-	visited[rootID] = true
+	queue := initialRefs
+
+	for _, id := range initialRefs {
+		visited[id] = true
+	}
 
 	for len(queue) > 0 {
 		currentID := queue[0]
