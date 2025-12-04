@@ -1,18 +1,9 @@
 package injector
 
 import (
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/rand"
 	"errors"
 	"fmt"
-	"io"
 	"os"
-	"path/filepath"
-	"strings"
-
-	"github.com/pdfcpu/pdfcpu/pkg/api"
-	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 )
 
 var (
@@ -35,229 +26,155 @@ var (
 	ErrAttachmentNotFound = errors.New("attachment not found")
 )
 
-// Sign embeds an encrypted message into a PDF file as an attachment.
-// It returns the output file path on success.
+// Sign embeds an encrypted message into a PDF file using dual-anchor strategy:
+// Anchor 1 (Main): Attachment - Easy to detect but standard-compliant
+// Anchor 2 (Stealth): Image SMask - Highly covert backup signature
 func Sign(filePath, message, key, round string) error {
 	// Validate inputs
 	if err := validateInputs(filePath, message, key); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
 	}
 
-	// Create encrypted payload
-	payload, err := createEncryptedPayload(message, []byte(key))
+	// Create crypto manager and encrypt payload
+	crypto, err := NewCryptoManager([]byte(key))
 	if err != nil {
-		return fmt.Errorf("failed to create encrypted payload: %w", err)
+		return fmt.Errorf("failed to create crypto manager: %w", err)
 	}
 
-	// Create temporary directory for attachment
-	tmpDir, err := os.MkdirTemp("", "defender_attach_*")
+	payload, err := crypto.Encrypt(message)
 	if err != nil {
-		return fmt.Errorf("failed to create temp directory: %w", err)
-	}
-	defer func() {
-		if cleanErr := os.RemoveAll(tmpDir); cleanErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to clean temp directory: %v\n", cleanErr)
-		}
-	}()
-
-	// Write payload to temporary file
-	payloadPath := filepath.Join(tmpDir, attachName)
-	if err := os.WriteFile(payloadPath, payload, 0600); err != nil {
-		return fmt.Errorf("failed to write payload: %w", err)
+		return fmt.Errorf("failed to encrypt message: %w", err)
 	}
 
-	// Generate output file path
+	// Generate output file paths
 	suffix := "_signed"
 	if round != "" {
 		suffix = "_" + round + "_signed"
 	}
-	outputFilePath, err := generateOutputPath(filePath, suffix)
+	tempOutputPath, err := generateOutputPath(filePath, "_temp")
+	if err != nil {
+		return fmt.Errorf("failed to generate temp output path: %w", err)
+	}
+	finalOutputPath, err := generateOutputPath(filePath, suffix)
 	if err != nil {
 		return fmt.Errorf("failed to generate output path: %w", err)
 	}
 
-	// Add attachment to PDF
-	conf := model.NewDefaultConfiguration()
-	if err := api.AddAttachmentsFile(filePath, outputFilePath, []string{payloadPath}, true, conf); err != nil {
-		return fmt.Errorf("failed to add attachment to PDF: %w", err)
+	// Get anchor registry
+	registry := NewAnchorRegistry()
+	anchors := registry.GetAvailableAnchors()
+
+	// === Anchor 1: Attachment (Main Anchor) ===
+	attachmentAnchor := anchors[0] // AttachmentAnchor
+	if err := attachmentAnchor.Inject(filePath, tempOutputPath, payload); err != nil {
+		return fmt.Errorf("failed to inject attachment anchor: %w", err)
+	}
+	fmt.Printf("✓ Anchor 1/2: %s embedded (%d bytes)\n", attachmentAnchor.Name(), len(payload))
+
+	// === Anchor 2: SMask (Stealth Anchor) ===
+	smaskAnchor := anchors[1] // SMaskAnchor
+	if err := smaskAnchor.Inject(tempOutputPath, finalOutputPath, payload); err != nil {
+		// SMask injection failed - fallback to attachment-only mode
+		fmt.Fprintf(os.Stderr, "⚠ Warning: SMask injection failed, using attachment-only mode: %v\n", err)
+		if renameErr := os.Rename(tempOutputPath, finalOutputPath); renameErr != nil {
+			return fmt.Errorf("failed to finalize output: %w", renameErr)
+		}
+		fmt.Printf("✓ Signature mode: Single-anchor (Attachment only)\n")
+	} else {
+		os.Remove(tempOutputPath)
+		fmt.Printf("✓ Anchor 2/2: %s embedded\n", smaskAnchor.Name())
+		fmt.Printf("✓ Signature mode: Dual-anchor (Attachment + SMask)\n")
 	}
 
-	fmt.Printf("✓ Successfully signed PDF: %s\n", outputFilePath)
-	fmt.Printf("  - Attachment: %s (size: %d bytes)\n", attachName, len(payload))
+	fmt.Printf("✓ Successfully signed PDF: %s\n", finalOutputPath)
 	return nil
 }
 
 // Verify extracts and decrypts the hidden message from a signed PDF file.
+// Uses multi-anchor verification: checks both attachment and SMask anchors.
+// Verification succeeds if ANY anchor is valid (fault-tolerant design).
 func Verify(filePath, key string) (string, error) {
 	// Validate inputs
 	if err := validateVerifyInputs(filePath, key); err != nil {
 		return "", fmt.Errorf("validation failed: %w", err)
 	}
 
-	// Extract payload from PDF
-	payload, err := extractPayloadFromPDF(filePath)
+	// Create crypto manager
+	crypto, err := NewCryptoManager([]byte(key))
 	if err != nil {
-		return "", fmt.Errorf("failed to extract payload: %w", err)
+		return "", fmt.Errorf("failed to create crypto manager: %w", err)
 	}
 
-	// Decrypt and verify payload
-	message, err := decryptPayload(payload, []byte(key))
-	if err != nil {
-		return "", fmt.Errorf("failed to decrypt payload: %w", err)
+	// Get anchor registry
+	registry := NewAnchorRegistry()
+	anchors := registry.GetAvailableAnchors()
+
+	// Try each anchor in order
+	for idx, anchor := range anchors {
+		fmt.Fprintf(os.Stderr, "[DEBUG] Attempting Anchor %d: %s...\n", idx+1, anchor.Name())
+
+		payload, extractErr := anchor.Extract(filePath)
+		if extractErr != nil {
+			fmt.Fprintf(os.Stderr, "[DEBUG] Anchor %d: Extraction failed: %v\n", idx+1, extractErr)
+			continue
+		}
+
+		fmt.Fprintf(os.Stderr, "[DEBUG] Anchor %d: Extracted %d bytes\n", idx+1, len(payload))
+
+		// Decrypt and verify
+		message, decryptErr := crypto.Decrypt(payload)
+		if decryptErr == nil {
+			if idx == 0 {
+				fmt.Printf("✓ Verified via Anchor %d: %s\n", idx+1, anchor.Name())
+			} else {
+				fmt.Printf("✓ Verified via Anchor %d: %s (backup anchor activated)\n", idx+1, anchor.Name())
+			}
+			return message, nil
+		}
+		fmt.Fprintf(os.Stderr, "[DEBUG] Anchor %d: Decryption failed: %v\n", idx+1, decryptErr)
 	}
 
-	return message, nil
+	// All anchors failed
+	return "", fmt.Errorf("verification failed: all anchors invalid or missing")
 }
 
-// Helper functions
-
-// validateInputs validates the inputs for the Sign function
-func validateInputs(filePath, message, key string) error {
-	if filePath == "" {
-		return errors.New("file path cannot be empty")
-	}
-	if message == "" {
-		return errors.New("message cannot be empty")
-	}
-	if len(key) != keySize {
-		return ErrInvalidKeySize
-	}
-
-	// Check if file exists
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return fmt.Errorf("file does not exist: %s", filePath)
-	}
-
-	// Check if it's a PDF file
-	if !strings.HasSuffix(strings.ToLower(filePath), ".pdf") {
-		return ErrInvalidPDFFile
-	}
-
-	return nil
-}
-
-// validateVerifyInputs validates the inputs for the Verify function
-func validateVerifyInputs(filePath, key string) error {
-	if filePath == "" {
-		return errors.New("file path cannot be empty")
-	}
-	if len(key) != keySize {
-		return ErrInvalidKeySize
-	}
-
-	// Check if file exists
-	if _, err := os.Stat(filePath); os.IsNotExist(err) {
-		return fmt.Errorf("file does not exist: %s", filePath)
-	}
-
-	return nil
-}
-
-// createEncryptedPayload creates an encrypted payload from the message
+// Deprecated: Use CryptoManager.Encrypt instead
+// Kept for backward compatibility with old tests
 func createEncryptedPayload(message string, key []byte) ([]byte, error) {
-	block, err := aes.NewCipher(key)
+	crypto, err := NewCryptoManager(key)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create cipher: %w", err)
+		return nil, err
 	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create GCM: %w", err)
-	}
-
-	nonce := make([]byte, nonceSize)
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		return nil, fmt.Errorf("failed to generate nonce: %w", err)
-	}
-
-	encryptedMessage := gcm.Seal(nil, nonce, []byte(message), nil)
-
-	// Build payload: magic header + nonce + encrypted message
-	payload := make([]byte, 0, len(magicHeader)+len(nonce)+len(encryptedMessage))
-	payload = append(payload, magicHeader...)
-	payload = append(payload, nonce...)
-	payload = append(payload, encryptedMessage...)
-
-	return payload, nil
+	return crypto.Encrypt(message)
 }
 
-// extractPayloadFromPDF extracts the payload attachment from a PDF file
+// Deprecated: Use AttachmentAnchor.Extract instead
+// Kept for backward compatibility with old tests
 func extractPayloadFromPDF(filePath string) ([]byte, error) {
-	tmpDir, err := os.MkdirTemp("", "defender_verify_*")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp directory: %w", err)
-	}
-	defer func() {
-		if cleanErr := os.RemoveAll(tmpDir); cleanErr != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to clean temp directory: %v\n", cleanErr)
-		}
-	}()
-
-	conf := model.NewDefaultConfiguration()
-
-	// Extract attachment from PDF
-	if err := api.ExtractAttachmentsFile(filePath, tmpDir, []string{attachName}, conf); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrAttachmentNotFound, err)
-	}
-
-	extractedPath := filepath.Join(tmpDir, attachName)
-	payload, err := os.ReadFile(extractedPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read extracted attachment: %w", err)
-	}
-
-	return payload, nil
+	anchor := NewAttachmentAnchor()
+	return anchor.Extract(filePath)
 }
 
-// decryptPayload decrypts the payload and returns the message
+// Deprecated: Use CryptoManager.Decrypt instead
+// Kept for backward compatibility with old tests
 func decryptPayload(payload, key []byte) (string, error) {
-	// Validate payload structure
-	minSize := len(magicHeader) + nonceSize
-	if len(payload) < minSize {
-		return "", ErrShortPayload
-	}
-
-	// Verify magic header
-	for i := range magicHeader {
-		if payload[i] != magicHeader[i] {
-			return "", ErrMagicHeaderMismatch
-		}
-	}
-
-	// Extract nonce and encrypted message
-	nonce := payload[len(magicHeader) : len(magicHeader)+nonceSize]
-	encryptedMessage := payload[len(magicHeader)+nonceSize:]
-
-	// Decrypt
-	block, err := aes.NewCipher(key)
+	crypto, err := NewCryptoManager(key)
 	if err != nil {
-		return "", fmt.Errorf("failed to create cipher: %w", err)
+		return "", err
 	}
-
-	gcm, err := cipher.NewGCM(block)
-	if err != nil {
-		return "", fmt.Errorf("failed to create GCM: %w", err)
-	}
-
-	decrypted, err := gcm.Open(nil, nonce, encryptedMessage, nil)
-	if err != nil {
-		return "", fmt.Errorf("decryption failed (wrong key or corrupted data): %w", err)
-	}
-
-	return string(decrypted), nil
+	return crypto.Decrypt(payload)
 }
 
-// generateOutputPath generates the output file path with a suffix
-func generateOutputPath(inputPath, suffix string) (string, error) {
-	dir := filepath.Dir(inputPath)
-	base := filepath.Base(inputPath)
-	ext := filepath.Ext(base)
-	name := strings.TrimSuffix(base, ext)
+// Deprecated: Use SMaskAnchor.Inject instead
+// Kept for backward compatibility with old tests
+func injectSMaskAnchor(inputPath, outputPath string, payload []byte) error {
+	anchor := NewSMaskAnchor()
+	return anchor.Inject(inputPath, outputPath, payload)
+}
 
-	if name == "" {
-		return "", errors.New("invalid file name")
-	}
-
-	outputFileName := name + suffix + ext
-	return filepath.Join(dir, outputFileName), nil
+// Deprecated: Use SMaskAnchor.Extract instead
+// Kept for backward compatibility with old tests
+func extractSMaskPayloadFromPDF(filePath string) ([]byte, error) {
+	anchor := NewSMaskAnchor()
+	return anchor.Extract(filePath)
 }
