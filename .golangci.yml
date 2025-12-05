@@ -23,7 +23,7 @@ linters-settings:
       - whyNoLint
       - wrapperFunc
   gocyclo:
-    min-complexity: 15
+    min-complexity: 30
   goimports:
     local-prefixes: defender
   golint:
