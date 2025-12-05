@@ -24,6 +24,9 @@ const (
 	ColorBold   = "\033[1m"
 )
 
+var lastProtectedOutput string
+var lastKey string
+
 func runInteractive() {
 	scanner := bufio.NewScanner(os.Stdin)
 
@@ -32,12 +35,20 @@ func runInteractive() {
 		fmt.Println(ColorBlue + "==================================================" + ColorReset)
 		fmt.Println(ColorBold + "   🛡️  PhantomGuard - PDF Protection Tool" + ColorReset)
 		fmt.Println(ColorBlue + "==================================================" + ColorReset)
+		hasLookup := lastProtectedOutput != "" && lastKey != ""
 		fmt.Println("")
 		fmt.Println("1. " + ColorBold + "🔒 Protect PDF" + ColorReset + "   (Embed invisible watermark)")
 		fmt.Println("2. " + ColorBold + "🔍 Verify PDF" + ColorReset + "    (Extract & verify watermark)")
-		fmt.Println("3. " + ColorRed + "🚪 Exit" + ColorReset)
-		fmt.Println("")
-		fmt.Print(ColorCyan + "Select option (1-3): " + ColorReset)
+		if hasLookup {
+			fmt.Println("3. " + ColorBold + "🔎 Lookup" + ColorReset + "       (Verify last protected file, All mode)")
+			fmt.Println("4. " + ColorRed + "🚪 Exit" + ColorReset)
+			fmt.Println("")
+			fmt.Print(ColorCyan + "Select option (1-4): " + ColorReset)
+		} else {
+			fmt.Println("3. " + ColorRed + "🚪 Exit" + ColorReset)
+			fmt.Println("")
+			fmt.Print(ColorCyan + "Select option (1-3): " + ColorReset)
+		}
 
 		if !scanner.Scan() {
 			return
@@ -50,8 +61,20 @@ func runInteractive() {
 		case "2":
 			interactiveVerify(scanner)
 		case "3":
-			fmt.Println("\n" + ColorBlue + "Stay safe! 👋" + ColorReset)
-			os.Exit(0)
+			if hasLookup {
+				interactiveLookup(scanner)
+			} else {
+				fmt.Println("\n" + ColorBlue + "Stay safe! 👋" + ColorReset)
+				os.Exit(0)
+			}
+		case "4":
+			if hasLookup {
+				fmt.Println("\n" + ColorBlue + "Stay safe! 👋" + ColorReset)
+				os.Exit(0)
+			} else {
+				fmt.Println(ColorRed + "\nInvalid option. Please try again." + ColorReset)
+				time.Sleep(1 * time.Second)
+			}
 		default:
 			fmt.Println(ColorRed + "\nInvalid option. Please try again." + ColorReset)
 			time.Sleep(1 * time.Second)
@@ -130,31 +153,36 @@ func interactiveProtect(scanner *bufio.Scanner) {
 
 	var selectedAnchors []string
 
-	switch level {
-	case "1":
-		selectedAnchors = []string{"Attachment"}
-	case "2":
-		selectedAnchors = []string{"Attachment", "SMask"}
-	case "3":
-		selectedAnchors = nil // All
-	case "4":
-		// Custom selection
-		fmt.Println("\nAvailable Anchors: Attachment, SMask, Content, Visual")
-		fmt.Print("Enter anchor names separated by comma (e.g. 'Attachment,Visual'):\n> ")
-		if !scanner.Scan() {
-			return
-		}
-		input := scanner.Text()
-		parts := strings.Split(input, ",")
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				selectedAnchors = append(selectedAnchors, p)
-			}
-		}
-	default:
+	if level == "" {
 		fmt.Println(ColorYellow + "[*] Defaulting to Maximum protection" + ColorReset)
 		selectedAnchors = nil
+	} else {
+		switch level {
+		case "1":
+			selectedAnchors = []string{"Attachment"}
+		case "2":
+			selectedAnchors = []string{"Attachment", "SMask"}
+		case "3":
+			selectedAnchors = nil // All
+		case "4":
+			// Custom selection
+			fmt.Println("\nAvailable Anchors: Attachment, SMask, Content, Visual")
+			fmt.Print("Enter anchor names separated by comma (e.g. 'Attachment,Visual'):\n> ")
+			if !scanner.Scan() {
+				return
+			}
+			input := scanner.Text()
+			parts := strings.Split(input, ",")
+			for _, p := range parts {
+				p = strings.TrimSpace(p)
+				if p != "" {
+					selectedAnchors = append(selectedAnchors, p)
+				}
+			}
+		default:
+			fmt.Println(ColorYellow + "[*] Defaulting to Maximum protection" + ColorReset)
+			selectedAnchors = nil
+		}
 	}
 
 	fmt.Println("\n" + ColorBlue + "[*] Processing..." + ColorReset)
@@ -177,6 +205,8 @@ func interactiveProtect(scanner *bufio.Scanner) {
 		fmt.Printf("[KEY] Key: "+ColorBold+"%s"+ColorReset+"\n", key)
 		fmt.Println(ColorYellow + "[WARNING] IMPORTANT: Save this key! It is required for verification." + ColorReset)
 		fmt.Println(ColorYellow + "--------------------------------------------------" + ColorReset)
+		lastProtectedOutput = outPath
+		lastKey = key
 	}
 
 	waitForEnter(scanner)
@@ -211,45 +241,121 @@ func interactiveVerify(scanner *bufio.Scanner) {
 
 	// Step 3: Verification Mode
 	fmt.Println("\n" + ColorBold + "[Step 3/3] Select Verification Mode:" + ColorReset)
-	fmt.Println("1. " + ColorGreen + "Auto" + ColorReset + " (Try all, stop at first success)")
-	fmt.Println("2. " + ColorBlue + "Custom" + ColorReset + " (Verify specific anchors)")
+	fmt.Println("1. " + ColorGreen + "Auto" + ColorReset + " (Stop at first success)")
+	fmt.Println("2. " + ColorBlue + "All" + ColorReset + " (Try all anchors sequentially, show each result)")
 	fmt.Print("> ")
 
 	if !scanner.Scan() {
 		return
 	}
 	mode := strings.TrimSpace(scanner.Text())
-
-	var selectedAnchors []string
-
+	fmt.Println("\n" + ColorBlue + "[*] Verifying..." + ColorReset)
 	if mode == "2" {
-		fmt.Println("\nAvailable Anchors: Attachment, SMask, Content")
-		fmt.Println(ColorYellow + "Note: Visual watermark does not support extraction/verification" + ColorReset)
-		fmt.Print("Enter anchor names separated by comma (e.g. 'SMask'):\n> ")
-		if !scanner.Scan() {
+		// Custom: flat expanded verification per selected anchors
+		cryptoMgr, err := injector.NewCryptoManager([]byte(key))
+		if err != nil {
+			fmt.Printf(ColorRed+"[ERROR] Invalid key: %v\n"+ColorReset, err)
+			waitForEnter(scanner)
 			return
 		}
-		input := scanner.Text()
-		parts := strings.Split(input, ",")
-		for _, p := range parts {
-			p = strings.TrimSpace(p)
-			if p != "" {
-				selectedAnchors = append(selectedAnchors, p)
+		registry := injector.NewAnchorRegistry()
+		anchorsToUse := registry.GetAvailableAnchors()
+		// Filter out Visual (no extraction)
+		filtered := make([]injector.Anchor, 0, len(anchorsToUse))
+		for _, a := range anchorsToUse {
+			if a.Name() != "Visual" {
+				filtered = append(filtered, a)
 			}
+		}
+		anchorsToUse = filtered
+		if len(anchorsToUse) == 0 {
+			fmt.Println(ColorYellow + "[*] No valid anchors available for ALL verify." + ColorReset)
+			waitForEnter(scanner)
+			return
+		}
+		fmt.Println(ColorYellow + "----- All Verify (Sequential) -----" + ColorReset)
+		success := false
+		for _, a := range anchorsToUse {
+			fmt.Printf("Trying: %s ... ", a.Name())
+			payload, extErr := a.Extract(path)
+			if extErr != nil {
+				fmt.Println(ColorRed + "extract failed" + ColorReset)
+				continue
+			}
+			msg, decErr := cryptoMgr.Decrypt(payload)
+			if decErr != nil {
+				fmt.Println(ColorRed + "decrypt failed" + ColorReset)
+				continue
+			}
+			fmt.Println(ColorGreen + "OK" + ColorReset)
+			fmt.Printf("Message("+ColorBold+"%s"+ColorReset+"): %s\n", a.Name(), msg)
+			success = true
+		}
+		if !success {
+			fmt.Println(ColorRed + "[ERROR] Verification Failed: no anchors succeeded." + ColorReset)
+			fmt.Println(ColorYellow + "Possible reasons: Wrong key, file tampered, or not protected." + ColorReset)
+		}
+	} else {
+		// Auto mode: stop at first success
+		msg, anchorName, err := injector.Verify(path, key, nil)
+		if err != nil {
+			fmt.Printf(ColorRed+"[ERROR] Verification Failed: %v\n"+ColorReset, err)
+			fmt.Println(ColorYellow + "Possible reasons: Wrong key, file tampered, or not protected." + ColorReset)
+		} else {
+			fmt.Println("\n" + ColorGreen + "[SUCCESS] Verification Successful!" + ColorReset)
+			fmt.Printf("Found via: "+ColorBold+"%s"+ColorReset+"\n", anchorName)
+			fmt.Printf("Hidden Message: "+ColorBold+"%s"+ColorReset+"\n", msg)
 		}
 	}
 
-	fmt.Println("\n" + ColorBlue + "[*] Verifying..." + ColorReset)
-	msg, anchorName, err := injector.Verify(path, key, selectedAnchors)
-	if err != nil {
-		fmt.Printf(ColorRed+"[ERROR] Verification Failed: %v\n"+ColorReset, err)
-		fmt.Println(ColorYellow + "Possible reasons: Wrong key, file tampered, or not protected." + ColorReset)
-	} else {
-		fmt.Println("\n" + ColorGreen + "[SUCCESS] Verification Successful!" + ColorReset)
-		fmt.Printf("Found via: "+ColorBold+"%s"+ColorReset+"\n", anchorName)
-		fmt.Printf("Hidden Message: "+ColorBold+"%s"+ColorReset+"\n", msg)
-	}
+	waitForEnter(scanner)
+}
 
+func interactiveLookup(scanner *bufio.Scanner) {
+	fmt.Println("\n" + ColorYellow + "--- [LOOKUP] Verify Last Protected ---" + ColorReset)
+	if lastProtectedOutput == "" || lastKey == "" {
+		fmt.Println(ColorRed + "[ERROR] No recent protected file. Please run Protect first." + ColorReset)
+		waitForEnter(scanner)
+		return
+	}
+	if _, err := os.Stat(lastProtectedOutput); os.IsNotExist(err) {
+		fmt.Println(ColorRed + "[ERROR] Last protected file not found: " + lastProtectedOutput + ColorReset)
+		waitForEnter(scanner)
+		return
+	}
+	fmt.Println("\n" + ColorBlue + "[*] Verifying (All mode)..." + ColorReset)
+	cryptoMgr, err := injector.NewCryptoManager([]byte(lastKey))
+	if err != nil {
+		fmt.Printf(ColorRed+"[ERROR] Invalid key: %v\n"+ColorReset, err)
+		waitForEnter(scanner)
+		return
+	}
+	registry := injector.NewAnchorRegistry()
+	anchors := registry.GetAvailableAnchors()
+	success := false
+	for _, a := range anchors {
+		if a.Name() == "Visual" {
+			continue
+		}
+		fmt.Printf("Trying: %s ... ", a.Name())
+		payload, extErr := a.Extract(lastProtectedOutput)
+		if extErr != nil {
+			fmt.Println(ColorRed + "extract failed" + ColorReset)
+			continue
+		}
+		msg, decErr := cryptoMgr.Decrypt(payload)
+		if decErr != nil {
+			fmt.Println(ColorRed + "decrypt failed" + ColorReset)
+			continue
+		}
+		fmt.Println(ColorGreen + "OK" + ColorReset)
+		fmt.Printf("Message("+ColorBold+"%s"+ColorReset+"): %s\n", a.Name(), msg)
+		success = true
+	}
+	if !success {
+		fmt.Println(ColorRed + "[ERROR] Verification Failed: no anchors succeeded." + ColorReset)
+		fmt.Println(ColorYellow + "Possible reasons: Wrong key, file tampered, or not protected." + ColorReset)
+	}
 	waitForEnter(scanner)
 }
 

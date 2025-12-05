@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"defender/injector"
 
@@ -10,11 +11,12 @@ import (
 )
 
 var (
-	filePath string
-	message  string
-	key      string
-	round    string
-	version  = "1.0.0"
+	filePath   string
+	message    string
+	key        string
+	round      string
+	verifyMode string
+	version    = "1.0.0"
 )
 
 var rootCmd = &cobra.Command{
@@ -102,6 +104,40 @@ Note: The decryption key must match the one used during signing.`,
 		fmt.Printf("   File: %s\n", filePath)
 		fmt.Println()
 
+		if strings.ToLower(verifyMode) == "all" {
+			crypto, err := injector.NewCryptoManager([]byte(key))
+			if err != nil {
+				return fmt.Errorf("failed to create crypto manager: %w", err)
+			}
+			registry := injector.NewAnchorRegistry()
+			anchors := registry.GetAvailableAnchors()
+			anySuccess := false
+			for _, a := range anchors {
+				if a.Name() == "Visual" { // Visual 不支持提取
+					continue
+				}
+				fmt.Printf(" - Trying %s... ", a.Name())
+				payload, extErr := a.Extract(filePath)
+				if extErr != nil {
+					fmt.Println("extract failed")
+					continue
+				}
+				msg, decErr := crypto.Decrypt(payload)
+				if decErr != nil {
+					fmt.Println("decrypt failed")
+					continue
+				}
+				fmt.Println("OK")
+				fmt.Printf("   Message(%s): %s\n", a.Name(), msg)
+				anySuccess = true
+			}
+			if !anySuccess {
+				return fmt.Errorf("verify operation failed: all anchors invalid or missing")
+			}
+			fmt.Println("✅ Verification finished (mode=all).")
+			return nil
+		}
+
 		extractedMsg, _, err := injector.Verify(filePath, key, nil)
 		if err != nil {
 			return fmt.Errorf("verify operation failed: %w", err)
@@ -129,6 +165,7 @@ func init() {
 	// Verify command flags
 	verifyCmd.Flags().StringVarP(&filePath, "file", "f", "", "Target PDF file path (required)")
 	verifyCmd.Flags().StringVarP(&key, "key", "k", "", "32-byte decryption key (required)")
+	verifyCmd.Flags().StringVar(&verifyMode, "mode", "auto", "Verification mode: auto|all")
 	_ = verifyCmd.MarkFlagRequired("file")
 	_ = verifyCmd.MarkFlagRequired("key")
 }
