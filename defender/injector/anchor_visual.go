@@ -51,37 +51,52 @@ func (a *VisualAnchor) Inject(inputPath, outputPath string, payload []byte) erro
 	watermarkText := fmt.Sprintf("CONFIDENTIAL | %s", message)
 
 	// Detect if message contains non-ASCII characters (Unicode)
-	// Removed: always use embedded Unicode font
+	isASCII := true
+	for _, r := range watermarkText {
+		if r > 127 {
+			isASCII = false
+			break
+		}
+	}
 
-	// Configure watermark using embedded pan-Unicode font (always)
 	var wmConf *model.Watermark
 	var err error
 
-	// Install embedded font once
-	fontMutex.Lock()
-	if !fontInstalled {
-		if fontErr := InstallEmbeddedUnicodeFont(); fontErr != nil {
-			fmt.Fprintf(os.Stderr, "[WARN] Failed to install embedded Unicode font: %v\n", fontErr)
+	if isASCII {
+		// Optimization: Use standard PDF font (Helvetica) for ASCII-only text.
+		// This avoids embedding the ~1MB Unicode font, resulting in zero file size overhead.
+		wmConf, err = api.TextWatermark(watermarkText,
+			"font:Helvetica, points:48, rot:45, op:0.3, col:0.5 0.5 0.5",
+			true, false, types.POINTS)
+		if err != nil {
+			return fmt.Errorf("failed to configure ASCII watermark: %w", err)
 		}
-		fontInstalled = true
-	}
-	fontMutex.Unlock()
+	} else {
+		// Non-ASCII characters present: Must use embedded pan-Unicode font.
 
-	// Always use embedded Go Noto font
-	// IMPORTANT: Font name "GoNotoCurrent-Regular-Regular" comes from pdfcpu's font registration.
-	// The double "Regular" is NOT a typo - it's generated from:
-	//   - TTF Internal Font Family: "GoNotoCurrent-Regular"
-	//   - TTF Internal Style Name: "Regular"
-	//   - pdfcpu combines them as: "{Family}-{Style}" = "GoNotoCurrent-Regular-Regular"
-	// This name must match the .gob file in ~/Library/Application Support/pdfcpu/fonts/
-	// DO NOT change this name unless you replace the embedded font file.
-	wmConf, err = api.TextWatermark(watermarkText,
-		"font:GoNotoCurrent-Regular-Regular, points:48, rot:45, op:0.3, col:0.5 0.5 0.5",
-		true, false, types.POINTS)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "[WARN] Embedded Unicode font unavailable, fallback to Helvetica: %v\n", err)
-		wmConf, err = api.TextWatermark(watermarkText, "font:Helvetica, points:48, rot:45, op:0.3, col:0.5 0.5 0.5", true, false, types.POINTS)
+		// Install embedded font once
+		fontMutex.Lock()
+		if !fontInstalled {
+			if fontErr := InstallEmbeddedUnicodeFont(); fontErr != nil {
+				fmt.Fprintf(os.Stderr, "[WARN] Failed to install embedded Unicode font: %v\n", fontErr)
+			}
+			fontInstalled = true
+		}
+		fontMutex.Unlock()
+
+		// Always use embedded Go Noto font for Unicode coverage
+		// Font name "GoNotoCurrent-Regular-Regular" matches the registration in pdfcpu
+		wmConf, err = api.TextWatermark(watermarkText,
+			"font:GoNotoCurrent-Regular-Regular, points:48, rot:45, op:0.3, col:0.5 0.5 0.5",
+			true, false, types.POINTS)
+
+		// Fallback if font loading failed
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "[WARN] Embedded Unicode font unavailable, fallback to Helvetica (may display tofu): %v\n", err)
+			wmConf, err = api.TextWatermark(watermarkText, "font:Helvetica, points:48, rot:45, op:0.3, col:0.5 0.5 0.5", true, false, types.POINTS)
+		}
 	}
+
 	if err != nil {
 		return fmt.Errorf("failed to configure watermark: %w", err)
 	}

@@ -213,6 +213,7 @@ temp/
 
 # But do not ignore the original file in docs/
 !docs/2511.17467v2.pdf
+!defender/testdata/2511.17467v2.pdf
 
 *_stream_cleaned
 *_sanitized

@@ -26,6 +26,12 @@ var (
 	ErrAttachmentNotFound = errors.New("attachment not found")
 )
 
+var (
+	// DefaultAnchors defines the default "Invisible Mode" anchors (Stealth + Robustness)
+	// It excludes Visual anchor to avoid visible changes and large font overhead.
+	DefaultAnchors = []string{"Attachment", "SMask", "Content"}
+)
+
 // Sign embeds an encrypted message into a PDF file using triple-anchor strategy:
 // Anchor 1 (Main): Attachment - Easy to detect but standard-compliant
 // Anchor 2 (Stealth): Image SMask - Highly covert backup signature
@@ -71,7 +77,15 @@ func Sign(filePath, message, key string, selectedAnchors []string) error {
 	// Filter anchors based on selection
 	var anchorsToUse []Anchor
 	if len(selectedAnchors) == 0 {
-		anchorsToUse = allAnchors
+		// Default to Invisible Mode (Attachment, SMask, Content)
+		for _, name := range DefaultAnchors {
+			for _, a := range allAnchors {
+				if a.Name() == name {
+					anchorsToUse = append(anchorsToUse, a)
+					break
+				}
+			}
+		}
 	} else {
 		for _, name := range selectedAnchors {
 			for _, a := range allAnchors {

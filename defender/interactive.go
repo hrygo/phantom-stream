@@ -140,10 +140,11 @@ func interactiveProtect(scanner *bufio.Scanner) {
 
 	// Step 4: Protection Level
 	fmt.Println("\n" + ColorBold + "[Step 4/4] Select Protection Level:" + ColorReset)
-	fmt.Println("1. " + ColorGreen + "Standard" + ColorReset + " (Attachment only) - Compatible, easy to detect")
-	fmt.Println("2. " + ColorYellow + "Stealth" + ColorReset + "  (Attachment + SMask) - Harder to detect")
-	fmt.Println("3. " + ColorRed + "Maximum" + ColorReset + "  (All Anchors: Attachment + SMask + Content + Visual) - Max resilience")
-	fmt.Println("4. " + ColorBlue + "Custom" + ColorReset + "   (Select specific anchors)")
+	// Use fixed width formatting for alignment
+	// %-24s pads string to 24 chars, aligned left
+	fmt.Printf("1. "+ColorGreen+"%-24s"+ColorReset+" - Attachment + SMask + Content (Zero Overhead)\n", "Invisible (Default)")
+	fmt.Printf("2. "+ColorYellow+"%-24s"+ColorReset+" - Invisible + Visual Watermark\n", "All Combined")
+	fmt.Printf("3. "+ColorBlue+"%-24s"+ColorReset+" - Select specific anchors manually\n", "Custom")
 	fmt.Print("> ")
 
 	if !scanner.Scan() {
@@ -153,18 +154,18 @@ func interactiveProtect(scanner *bufio.Scanner) {
 
 	var selectedAnchors []string
 
-	if level == "" {
-		fmt.Println(ColorYellow + "[*] Defaulting to Maximum protection" + ColorReset)
-		selectedAnchors = nil
+	if level == "" || level == "1" {
+		fmt.Println(ColorGreen + "[*] Using Invisible Mode (Attachment, SMask, Content)" + ColorReset)
+		selectedAnchors = nil // Use default behavior (modified to be Invisible)
 	} else {
 		switch level {
-		case "1":
-			selectedAnchors = []string{"Attachment"}
 		case "2":
-			selectedAnchors = []string{"Attachment", "SMask"}
+			// All Anchors (Invisible + Visual)
+			// Since generic Visual implies we want everything secure + visual
+			// But wait, user might just want Visual? Usually Visual is added ON TOP of invisible.
+			// Let's assume Visual Deterrence means "Max" (All).
+			selectedAnchors = []string{"Attachment", "SMask", "Content", "Visual"}
 		case "3":
-			selectedAnchors = nil // All
-		case "4":
 			// Custom selection
 			fmt.Println("\nAvailable Anchors: Attachment, SMask, Content, Visual")
 			fmt.Print("Enter anchor names separated by comma (e.g. 'Attachment,Visual'):\n> ")
@@ -180,7 +181,7 @@ func interactiveProtect(scanner *bufio.Scanner) {
 				}
 			}
 		default:
-			fmt.Println(ColorYellow + "[*] Defaulting to Maximum protection" + ColorReset)
+			fmt.Println(ColorGreen + "[*] Using Invisible Mode" + ColorReset)
 			selectedAnchors = nil
 		}
 	}
