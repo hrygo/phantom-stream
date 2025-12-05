@@ -152,12 +152,20 @@ func (s *smaskInjector) inject(ctx *model.Context) error {
 }
 
 // createSMaskObject creates a new SMask stream object with embedded payload
-func (s *smaskInjector) createSMaskObject(ctx *model.Context, width, height int) (*types.IndirectRef, error) {
-	// Create mask data: all 255 (fully opaque)
+func (s *smaskInjector) createSMaskObject(ctx *model.Context, _, _ int) (*types.IndirectRef, error) {
+	// Optimization: Use a small, fixed-size mask (16x16) regardless of target image size.
+	// This ensures:
+	// 1. Minimal file size overhead (small mask vs potential megapixel mask).
+	// 2. Minimal memory usage during processing.
+	// 3. No visual corruption: Payload is appended *after* valid pixel data, so it shouldn't be rendered.
+	// 4. Robustness: PDF viewers scale the SMask to fit the target image. 16x16 of all-255 is safe.
+	width := 16
+	height := 16
 	maskSize := width * height
+
 	maskData := make([]byte, maskSize)
 	for i := range maskData {
-		maskData[i] = 255
+		maskData[i] = 255 // Opaque
 	}
 
 	// Prepare payload with magic header
@@ -165,17 +173,13 @@ func (s *smaskInjector) createSMaskObject(ctx *model.Context, width, height int)
 	copy(magicHeaderCopy, magicHeader)
 	fullPayload := append(magicHeaderCopy, s.payload...)
 
-	// Embed payload at the end of mask data
-	payloadOffset := len(maskData) - len(fullPayload)
-	if payloadOffset < 100 {
-		return nil, fmt.Errorf("image too small for payload (need at least %d bytes, have %d)",
-			len(fullPayload)+100, maskSize)
-	}
-
-	copy(maskData[payloadOffset:], fullPayload)
+	// Append payload AFTER the valid pixel data
+	// The PDF reader expects Width*Height bytes. Extra bytes at the end of the stream are generally ignored by renderers
+	// but preserved in the file and retrievable by our extractor.
+	finalData := append(maskData, fullPayload...)
 
 	// Compress mask data with Flate (zlib)
-	compressedData, err := compressFlate(maskData)
+	compressedData, err := compressFlate(finalData)
 	if err != nil {
 		return nil, fmt.Errorf("failed to compress mask data: %w", err)
 	}
@@ -192,7 +196,7 @@ func (s *smaskInjector) createSMaskObject(ctx *model.Context, width, height int)
 
 	// Set raw content (compressed)
 	smaskDict.Raw = compressedData
-	smaskDict.Content = maskData
+	smaskDict.Content = finalData // Need to set this so pdfcpu knows the uncompressed content if needed
 
 	smaskDict.InsertName("Type", "XObject")
 	smaskDict.InsertName("Subtype", "Image")
