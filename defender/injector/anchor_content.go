@@ -231,60 +231,67 @@ func (a *ContentAnchor) Extract(filePath string) ([]byte, error) {
 		}
 
 		contentStr := string(content)
-		if !strings.Contains(contentStr, "BT") || !strings.Contains(contentStr, "ET") {
-			continue
+		if payload, found := a.parseContentStreamForPayload(contentStr); found {
+			fmt.Printf("[DEBUG] Content: Found payload in object %d\n", objNr)
+			return payload, nil
 		}
+	}
 
-		// Naive parsing: Look for the specific pattern we injected
-		// "3 Tr\n["
-		if idx := strings.LastIndex(contentStr, "3 Tr"); idx != -1 {
-			// Look ahead for [
-			startBracket := strings.Index(contentStr[idx:], "[")
-			if startBracket != -1 {
-				startBracket += idx
-				endBracket := strings.Index(contentStr[startBracket:], "] TJ")
-				if endBracket != -1 {
-					endBracket += startBracket
+	return nil, fmt.Errorf("content payload not found")
+}
 
-					arrayContent := contentStr[startBracket+1 : endBracket]
-					// Parse values: ( ) 123 ( ) 456 ...
-					// We just want the numbers
+func (a *ContentAnchor) parseContentStreamForPayload(contentStr string) ([]byte, bool) {
+	if !strings.Contains(contentStr, "BT") || !strings.Contains(contentStr, "ET") {
+		return nil, false
+	}
 
-					// Split by space
-					parts := strings.Fields(arrayContent)
-					var extractedBytes []byte
+	// Naive parsing: Look for the specific pattern we injected
+	// "3 Tr\n["
+	if idx := strings.LastIndex(contentStr, "3 Tr"); idx != -1 {
+		// Look ahead for [
+		startBracket := strings.Index(contentStr[idx:], "[")
+		if startBracket != -1 {
+			startBracket += idx
+			endBracket := strings.Index(contentStr[startBracket:], "] TJ")
+			if endBracket != -1 {
+				endBracket += startBracket
 
-					for i := 0; i < len(parts); i++ {
-						part := parts[i]
-						if part == "(" || part == ")" || part == "()" {
-							continue
-						}
+				arrayContent := contentStr[startBracket+1 : endBracket]
+				// Parse values: ( ) 123 ( ) 456 ...
+				// We just want the numbers
 
-						// Try to parse as number
-						if val, err := strconv.Atoi(part); err == nil {
-							if val >= 0 && val <= 255 {
-								extractedBytes = append(extractedBytes, byte(val))
-							}
-						}
+				// Split by space
+				parts := strings.Fields(arrayContent)
+				var extractedBytes []byte
+
+				for i := 0; i < len(parts); i++ {
+					part := parts[i]
+					if part == "(" || part == ")" || part == "()" {
+						continue
 					}
 
-					// Check magic header
-					if len(extractedBytes) >= len(contentMagicHeader) {
-						// Search for magic header in the extracted bytes
-						// Because we might have picked up other numbers
-						for i := 0; i <= len(extractedBytes)-len(contentMagicHeader); i++ {
-							if bytes.Equal(extractedBytes[i:i+len(contentMagicHeader)], contentMagicHeader) {
-								fmt.Printf("[DEBUG] Content: Found payload in object %d\n", objNr)
-								return extractedBytes[i+len(contentMagicHeader):], nil
-							}
+					// Try to parse as number
+					if val, err := strconv.Atoi(part); err == nil {
+						if val >= 0 && val <= 255 {
+							extractedBytes = append(extractedBytes, byte(val))
+						}
+					}
+				}
+
+				// Check magic header
+				if len(extractedBytes) >= len(contentMagicHeader) {
+					// Search for magic header in the extracted bytes
+					// Because we might have picked up other numbers
+					for i := 0; i <= len(extractedBytes)-len(contentMagicHeader); i++ {
+						if bytes.Equal(extractedBytes[i:i+len(contentMagicHeader)], contentMagicHeader) {
+							return extractedBytes[i+len(contentMagicHeader):], true
 						}
 					}
 				}
 			}
 		}
 	}
-
-	return nil, fmt.Errorf("content payload not found")
+	return nil, false
 }
 
 // Unused import placeholders

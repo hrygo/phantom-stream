@@ -44,18 +44,13 @@ func TestAnchorOverhead(t *testing.T) {
 		if safeName == "All Combined" {
 			safeName = "All_Combined"
 		}
-		outputPath := filepath.Join("../testdata", fmt.Sprintf("bench_%s.pdf", safeName))
+		outputPath := filepath.Join("..", "testdata", fmt.Sprintf("bench_%s.pdf", safeName))
 
 		// Sign creates a file with _signed suffix, we need to move it to our benchmark path
 		// Reconstruct default signed path
-		dir := filepath.Dir(inputPath)
-		ext := filepath.Ext(inputPath)
-		base := inputPath[:len(inputPath)-len(ext)]
-		defaultSignedPath := filepath.Join(dir, base+"_signed"+ext)
-		// Correct logic for base name extraction if inputPath contains directory
 		baseName := filepath.Base(inputPath)
 		baseNameNoExt := baseName[:len(baseName)-len(filepath.Ext(baseName))]
-		defaultSignedPath = filepath.Join(filepath.Dir(inputPath), baseNameNoExt+"_signed"+filepath.Ext(inputPath))
+		defaultSignedPath := filepath.Join(filepath.Dir(inputPath), baseNameNoExt+"_signed"+filepath.Ext(inputPath))
 
 		err := Sign(inputPath, message, key, tt.anchors)
 		if err != nil {

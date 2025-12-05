@@ -38,6 +38,8 @@ var (
 // Anchor 3 (Phase 8): Content Stream Perturbation - Watermark bound to rendering
 // Sign embeds an encrypted message into a PDF file using selected anchor strategies.
 // selectedAnchors: list of anchor names to use. If empty, uses all available anchors.
+// Sign embeds an encrypted message into a PDF file using selected anchor strategies.
+// selectedAnchors: list of anchor names to use. If empty, uses all available anchors.
 func Sign(filePath, message, key string, selectedAnchors []string) error {
 	// Validate inputs
 	if err := validateInputs(filePath, message, key); err != nil {
@@ -55,6 +57,42 @@ func Sign(filePath, message, key string, selectedAnchors []string) error {
 		return fmt.Errorf("failed to encrypt message: %w", err)
 	}
 
+	// Get anchor registry
+	registry := NewAnchorRegistry()
+	allAnchors := registry.GetAvailableAnchors()
+
+	anchorsToUse, err := resolveAnchors(allAnchors, selectedAnchors)
+	if err != nil {
+		return err
+	}
+
+	if len(anchorsToUse) == 0 {
+		return fmt.Errorf("no valid anchors selected")
+	}
+
+	// execute injection chain
+	return executeInjectionChain(filePath, message, payload, anchorsToUse)
+}
+
+func resolveAnchors(allAnchors []Anchor, selectedAnchors []string) ([]Anchor, error) {
+	var anchorsToUse []Anchor
+	targetNames := selectedAnchors
+	if len(targetNames) == 0 {
+		targetNames = DefaultAnchors
+	}
+
+	for _, name := range targetNames {
+		for _, a := range allAnchors {
+			if a.Name() == name {
+				anchorsToUse = append(anchorsToUse, a)
+				break
+			}
+		}
+	}
+	return anchorsToUse, nil
+}
+
+func executeInjectionChain(filePath, message string, payload []byte, anchorsToUse []Anchor) error {
 	// Generate output file paths
 	suffix := "_signed"
 	tempOutputPath1, err := generateOutputPath(filePath, "_temp1")
@@ -70,45 +108,9 @@ func Sign(filePath, message, key string, selectedAnchors []string) error {
 		return fmt.Errorf("failed to generate output path: %w", err)
 	}
 
-	// Get anchor registry
-	registry := NewAnchorRegistry()
-	allAnchors := registry.GetAvailableAnchors()
-
-	// Filter anchors based on selection
-	var anchorsToUse []Anchor
-	if len(selectedAnchors) == 0 {
-		// Default to Invisible Mode (Attachment, SMask, Content)
-		for _, name := range DefaultAnchors {
-			for _, a := range allAnchors {
-				if a.Name() == name {
-					anchorsToUse = append(anchorsToUse, a)
-					break
-				}
-			}
-		}
-	} else {
-		for _, name := range selectedAnchors {
-			for _, a := range allAnchors {
-				if a.Name() == name {
-					anchorsToUse = append(anchorsToUse, a)
-					break
-				}
-			}
-		}
-	}
-
-	if len(anchorsToUse) == 0 {
-		return fmt.Errorf("no valid anchors selected")
-	}
-
 	anchorCount := 0
-	anchorNames := []string{}
+	var anchorNames []string
 	currentInput := filePath
-	// We need to swap between temp1 and temp2 for intermediate steps
-	// Initial: Input -> Temp1
-	// Step 2: Temp1 -> Temp2
-	// Step 3: Temp2 -> Temp1
-	// Final Step: -> FinalOutput
 
 	// Helper to determine output for current step
 	getOutput := func(step, total int) string {
@@ -128,28 +130,21 @@ func Sign(filePath, message, key string, selectedAnchors []string) error {
 
 		// Visual anchor displays plaintext; others use encrypted payload
 		injectPayload := payload
-		if anchor.Name() == "Visual" {
+		if anchor.Name() == AnchorNameVisual {
 			injectPayload = []byte(message)
 		}
+
 		if err := anchor.Inject(currentInput, output, injectPayload); err != nil {
 			fmt.Fprintf(os.Stderr, "⚠ Warning: %s injection failed: %v\n", anchor.Name(), err)
-			// If injection failed, we need to ensure the chain continues.
-			// If this is the first step, we haven't created any temp file yet.
-			// If intermediate, we have a temp file at currentInput.
-			// We should copy currentInput to output to keep the chain, OR just skip this step's output
-			// and use currentInput for the next step.
-
-			// Strategy: Skip this anchor, don't update currentInput
-			// But if this was the last anchor, we need to move currentInput to finalOutputPath
+			// If injection failed, we need to handle the chain continuation or failure
 			if i == len(anchorsToUse)-1 {
 				// If we have a previous temp file, rename it to final
+				// If currentInput is original file (no previous success), we fail
 				if currentInput != filePath {
-					if err := os.Rename(currentInput, finalOutputPath); err != nil {
-						return fmt.Errorf("failed to finalize output: %w", err)
+					if renameErr := os.Rename(currentInput, finalOutputPath); renameErr != nil {
+						return fmt.Errorf("failed to finalize output: %w", renameErr)
 					}
 				} else {
-					// No anchors succeeded? Or just first failed.
-					// If first failed and it's the only one, we fail.
 					return fmt.Errorf("failed to inject %s and it was the only anchor", anchor.Name())
 				}
 			}
