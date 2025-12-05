@@ -3,7 +3,6 @@ package injector
 import (
 	"fmt"
 	"os"
-	"sync"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
@@ -13,12 +12,6 @@ import (
 const (
 	// AnchorNameVisual is the name of the visual watermark anchor
 	AnchorNameVisual = "Visual"
-)
-
-var (
-	// fontInstalled tracks whether we've attempted to install a Unicode font
-	fontInstalled bool
-	fontMutex     sync.Mutex
 )
 
 // VisualAnchor implements the Phase 9 strategy: Visual Watermarks
@@ -72,28 +65,41 @@ func (a *VisualAnchor) Inject(inputPath, outputPath string, payload []byte) erro
 			return fmt.Errorf("failed to configure ASCII watermark: %w", err)
 		}
 	} else {
-		// Non-ASCII characters present: Must use embedded pan-Unicode font.
+		// Non-ASCII characters present: Use Image Rasterization optimization.
+		// Instead of embedding the full ~14MB (compressed ~1MB) Unicode font,
+		// we render the text to a small transparent PNG on the fly and inject that.
+		// Overhead becomes negligible (< 50KB).
 
-		// Install embedded font once
-		fontMutex.Lock()
-		if !fontInstalled {
-			if fontErr := InstallEmbeddedUnicodeFont(); fontErr != nil {
-				fmt.Fprintf(os.Stderr, "[WARN] Failed to install embedded Unicode font: %v\n", fontErr)
-			}
-			fontInstalled = true
+		// 1. Render text to PNG
+		var pngBytes []byte
+		var renderErr error
+		pngBytes, renderErr = renderTextToPNG(watermarkText)
+		if renderErr != nil {
+			return fmt.Errorf("failed to render non-ASCII watermark to image: %w", renderErr)
 		}
-		fontMutex.Unlock()
 
-		// Always use embedded Go Noto font for Unicode coverage
-		// Font name "GoNotoCurrent-Regular-Regular" matches the registration in pdfcpu
-		wmConf, err = api.TextWatermark(watermarkText,
-			"font:GoNotoCurrent-Regular-Regular, points:48, rot:45, op:0.3, col:0.5 0.5 0.5",
-			true, false, types.POINTS)
+		// 2. Create temp file for the image
+		tmpFile, tmpErr := os.CreateTemp("", "phantom_wm_*.png")
+		if tmpErr != nil {
+			return fmt.Errorf("failed to create temp image file: %w", tmpErr)
+		}
+		imgParams := "rot:45, op:0.3, scale:1.0 abs" // 1.0 absolute scale (1px = 1pt)
 
-		// Fallback if font loading failed
+		defer func() {
+			tmpFile.Close()
+			os.Remove(tmpFile.Name())
+		}()
+
+		if _, writeErr := tmpFile.Write(pngBytes); writeErr != nil {
+			return fmt.Errorf("failed to write temp image file: %w", writeErr)
+		}
+		// Close explicitly before using in pdfcpu
+		tmpFile.Close()
+
+		// 3. Create Image Watermark configuration
+		wmConf, err = api.ImageWatermark(tmpFile.Name(), imgParams, true, false, types.POINTS)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "[WARN] Embedded Unicode font unavailable, fallback to Helvetica (may display tofu): %v\n", err)
-			wmConf, err = api.TextWatermark(watermarkText, "font:Helvetica, points:48, rot:45, op:0.3, col:0.5 0.5 0.5", true, false, types.POINTS)
+			return fmt.Errorf("failed to configure image watermark: %w", err)
 		}
 	}
 
