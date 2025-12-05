@@ -104,37 +104,60 @@ func Sign(filePath, message, key, round string) error {
 	// === Anchor 3: Content Stream Perturbation (Phase 8) ===
 	if len(anchors) > 2 {
 		contentAnchor := anchors[2] // ContentAnchor
-		if err := contentAnchor.Inject(currentInput, finalOutputPath, payload); err != nil {
-			// Content injection failed - finalize with current anchors
+		// We use tempOutputPath2 as input for Content Anchor, output to tempOutputPath1 (reuse)
+		// Wait, currentInput is tempOutputPath2.
+		// Let's use a new temp file or reuse.
+		// currentInput = tempOutputPath2
+		// currentOutput = finalOutputPath (if last)
+
+		// But we have a 4th anchor now.
+		// So Content Anchor output should be tempOutputPath1 (reused)
+		nextOutput := tempOutputPath1
+
+		if err := contentAnchor.Inject(currentInput, nextOutput, payload); err != nil {
+			// Content injection failed - continue without it
 			fmt.Fprintf(os.Stderr, "⚠ Warning: Content stream injection failed: %v\n", err)
+			// Keep currentInput unchanged
+		} else {
+			os.Remove(currentInput)
+			anchorCount++
+			anchorNames = append(anchorNames, contentAnchor.Name())
+			fmt.Printf("✓ Anchor %d/4: %s embedded\n", anchorCount, contentAnchor.Name())
+			currentInput = nextOutput
+		}
+	}
+
+	// === Anchor 4: Visual Watermark (Phase 9) ===
+	if len(anchors) > 3 {
+		visualAnchor := anchors[3] // VisualAnchor
+		// Final output
+		if err := visualAnchor.Inject(currentInput, finalOutputPath, payload); err != nil {
+			fmt.Fprintf(os.Stderr, "⚠ Warning: Visual watermark injection failed: %v\n", err)
+			// If visual fails, we still want to save the previous result to finalOutputPath
 			if err := os.Rename(currentInput, finalOutputPath); err != nil {
 				return fmt.Errorf("failed to finalize output: %w", err)
 			}
 		} else {
 			os.Remove(currentInput)
 			anchorCount++
-			anchorNames = append(anchorNames, contentAnchor.Name())
-			fmt.Printf("✓ Anchor %d/3: %s embedded\n", anchorCount, contentAnchor.Name())
+			anchorNames = append(anchorNames, visualAnchor.Name())
+			fmt.Printf("✓ Anchor %d/4: %s embedded\n", anchorCount, visualAnchor.Name())
 		}
 	} else {
-		// No content anchor available, finalize
+		// No visual anchor, finalize
 		if err := os.Rename(currentInput, finalOutputPath); err != nil {
 			return fmt.Errorf("failed to finalize output: %w", err)
 		}
 	}
 
-	// Clean up temp files
+	// Clean up temp files (if any remain)
 	os.Remove(tempOutputPath1)
 	os.Remove(tempOutputPath2)
 
 	// Report signature mode
-	switch anchorCount {
-	case 1:
-		fmt.Printf("✓ Signature mode: Single-anchor (%s only)\n", anchorNames[0])
-	case 2:
-		fmt.Printf("✓ Signature mode: Dual-anchor (%s + %s)\n", anchorNames[0], anchorNames[1])
-	case 3:
-		fmt.Printf("✓ Signature mode: Triple-anchor (%s + %s + %s) [Phase 8]\n", anchorNames[0], anchorNames[1], anchorNames[2])
+	fmt.Printf("✓ Signature mode: %d-anchor strategy [Phase 9]\n", anchorCount)
+	for i, name := range anchorNames {
+		fmt.Printf("  - Anchor %d: %s\n", i+1, name)
 	}
 
 	fmt.Printf("✓ Successfully signed PDF: %s\n", finalOutputPath)

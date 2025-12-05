@@ -5,7 +5,6 @@ import (
 	"compress/zlib"
 	"fmt"
 	"io"
-	"regexp"
 	"strconv"
 	"strings"
 
@@ -14,20 +13,16 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 )
 
-// ContentAnchor implements the Phase 8 strategy: Content Stream Perturbation
-// It embeds signature by appending a hidden marked content block at the end of content stream
+// ContentAnchor implements the Phase 8/9 strategy: Content Stream Perturbation
+// It embeds signature by injecting invisible text with specific kerning values (TJ operator).
 type ContentAnchor struct {
-	// Magic marker for identifying our content
-	markerTag string
 }
 
 // Magic header for content stream payload
 var contentMagicHeader = []byte{0xDE, 0xAD, 0xBE, 0xEF}
 
 func NewContentAnchor() *ContentAnchor {
-	return &ContentAnchor{
-		markerTag: "DFNDR", // Defender marker tag
-	}
+	return &ContentAnchor{}
 }
 
 func (a *ContentAnchor) Name() string {
@@ -39,9 +34,7 @@ func (a *ContentAnchor) IsAvailable(ctx *model.Context) bool {
 	return ctx.PageCount > 0
 }
 
-// Inject embeds the payload into page content streams using invisible marked content
-// This approach appends a hidden comment/marked content block at the end of the stream
-// The payload is hex-encoded and wrapped in a graphics state that renders nothing
+// Inject embeds the payload into page content streams using TJ operator
 func (a *ContentAnchor) Inject(inputPath, outputPath string, payload []byte) error {
 	// Read PDF context
 	ctx, err := api.ReadContextFile(inputPath)
@@ -56,9 +49,8 @@ func (a *ContentAnchor) Inject(inputPath, outputPath string, payload []byte) err
 
 	// Prepare payload with magic header
 	fullPayload := append(contentMagicHeader, payload...)
-	hexPayload := bytesToHex(fullPayload)
 
-	fmt.Printf("[DEBUG] Content: Payload size %d bytes, hex: %d chars\n", len(fullPayload), len(hexPayload))
+	fmt.Printf("[DEBUG] Content: Payload size %d bytes\n", len(fullPayload))
 
 	// Find and modify content streams
 	injectedCount := 0
@@ -95,27 +87,39 @@ func (a *ContentAnchor) Inject(inputPath, outputPath string, payload []byte) err
 			continue
 		}
 
-		// Only inject into the first content stream found
+		// Only inject into the first content stream found to avoid duplication
 		if injectedCount > 0 {
 			continue
 		}
 
 		fmt.Printf("[DEBUG] Content: Found content stream in object %d (%d bytes)\n", objNr, len(content))
 
-		// Create invisible marked content block with payload
-		// This uses a graphics state that sets text to 100% transparent
-		// The payload is embedded as a "hidden" text that renders as invisible
-		// Format: q 0 Tr 0 0 0 rg BT /F1 0.001 Tf (HEX_PAYLOAD) Tj ET Q
-		// This renders nothing visible but embeds the data in the content stream
+		// Construct the injection block
+		// We use standard text operators but with spaces and kerning values representing our payload.
+		// Format:
+		// BT
+		// /Helv 1 Tf   (Use a standard font, assuming it exists or is default)
+		// 3 Tr         (Render mode 3: Neither fill nor stroke -> Invisible)
+		// [ ( ) b1 ( ) b2 ... ] TJ
+		// ET
 
-		// Simpler approach: use PDF comment syntax which is ignored by renderers
-		// % is comment in PostScript/PDF content streams
-		// We embed the payload as: \n% DFNDR:HEXDATA\n
+		var sb strings.Builder
+		sb.WriteString("\nBT\n/Helv 1 Tf\n3 Tr\n[")
 
-		markerBlock := fmt.Sprintf("\n%% %s:%s\n", a.markerTag, hexPayload)
-		modifiedContent := append(content, []byte(markerBlock)...)
+		for _, b := range fullPayload {
+			// We encode each byte as a kerning value.
+			// To avoid confusion with normal text, we can offset it or just use it directly.
+			// Using ( ) <val> ensures we have a pattern to match.
+			sb.WriteString(fmt.Sprintf(" ( ) %d", b))
+		}
 
-		fmt.Printf("[DEBUG] Content: Appended %d bytes marker block\n", len(markerBlock))
+		sb.WriteString(" ] TJ\nET\n")
+		injectionBlock := []byte(sb.String())
+
+		// Append to the end of the stream
+		modifiedContent := append(content, injectionBlock...)
+
+		fmt.Printf("[DEBUG] Content: Appended %d bytes injection block\n", len(injectionBlock))
 		injectedCount++
 
 		// Compress and update the stream
@@ -141,7 +145,7 @@ func (a *ContentAnchor) Inject(inputPath, outputPath string, payload []byte) err
 
 	// Write output
 	if err := api.WriteContextFile(ctx, outputPath); err != nil {
-		return fmt.Errorf("failed to write output: %w\n", err)
+		return fmt.Errorf("failed to write output: %w", err)
 	}
 
 	return nil
@@ -158,8 +162,9 @@ func (a *ContentAnchor) Extract(filePath string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to optimize context: %w", err)
 	}
 
-	// Search pattern for our marker
-	markerPattern := regexp.MustCompile(`% ` + a.markerTag + `:([0-9A-Fa-f]+)`)
+	// Regex to find our TJ block: \[ ( \( \) \d+ )+ \] TJ
+	// Simplified: Look for brackets containing ( ) and numbers
+	// We look for the sequence that matches our encoding pattern
 
 	for objNr := 1; objNr <= *ctx.XRefTable.Size; objNr++ {
 		entry, found := ctx.Find(objNr)
@@ -191,18 +196,51 @@ func (a *ContentAnchor) Extract(filePath string) ([]byte, error) {
 			continue
 		}
 
-		fmt.Fprintf(io.Discard, "[DEBUG] Content: Extracting from object %d\n", objNr)
+		// Naive parsing: Look for the specific pattern we injected
+		// "3 Tr\n["
+		if idx := strings.LastIndex(contentStr, "3 Tr"); idx != -1 {
+			// Look ahead for [
+			startBracket := strings.Index(contentStr[idx:], "[")
+			if startBracket != -1 {
+				startBracket += idx
+				endBracket := strings.Index(contentStr[startBracket:], "] TJ")
+				if endBracket != -1 {
+					endBracket += startBracket
 
-		// Look for our marker
-		matches := markerPattern.FindStringSubmatch(contentStr)
-		if len(matches) >= 2 {
-			hexData := matches[1]
-			data := hexToBytes(hexData)
+					arrayContent := contentStr[startBracket+1 : endBracket]
+					// Parse values: ( ) 123 ( ) 456 ...
+					// We just want the numbers
 
-			// Verify magic header
-			if len(data) >= len(contentMagicHeader) && bytes.Equal(data[:len(contentMagicHeader)], contentMagicHeader) {
-				fmt.Printf("[DEBUG] Content: Found payload in object %d (%d bytes)\n", objNr, len(data))
-				return data[len(contentMagicHeader):], nil
+					// Split by space
+					parts := strings.Fields(arrayContent)
+					var extractedBytes []byte
+
+					for i := 0; i < len(parts); i++ {
+						part := parts[i]
+						if part == "(" || part == ")" || part == "()" {
+							continue
+						}
+
+						// Try to parse as number
+						if val, err := strconv.Atoi(part); err == nil {
+							if val >= 0 && val <= 255 {
+								extractedBytes = append(extractedBytes, byte(val))
+							}
+						}
+					}
+
+					// Check magic header
+					if len(extractedBytes) >= len(contentMagicHeader) {
+						// Search for magic header in the extracted bytes
+						// Because we might have picked up other numbers
+						for i := 0; i <= len(extractedBytes)-len(contentMagicHeader); i++ {
+							if bytes.Equal(extractedBytes[i:i+len(contentMagicHeader)], contentMagicHeader) {
+								fmt.Printf("[DEBUG] Content: Found payload in object %d\n", objNr)
+								return extractedBytes[i+len(contentMagicHeader):], nil
+							}
+						}
+					}
+				}
 			}
 		}
 	}
@@ -210,30 +248,5 @@ func (a *ContentAnchor) Extract(filePath string) ([]byte, error) {
 	return nil, fmt.Errorf("content payload not found")
 }
 
-// bytesToHex converts bytes to hex string
-func bytesToHex(data []byte) string {
-	var sb strings.Builder
-	for _, b := range data {
-		sb.WriteString(fmt.Sprintf("%02X", b))
-	}
-	return sb.String()
-}
-
-// hexToBytes converts hex string to bytes
-func hexToBytes(hex string) []byte {
-	if len(hex)%2 != 0 {
-		return nil
-	}
-	data := make([]byte, len(hex)/2)
-	for i := 0; i < len(hex); i += 2 {
-		b, err := strconv.ParseUint(hex[i:i+2], 16, 8)
-		if err != nil {
-			return nil
-		}
-		data[i/2] = byte(b)
-	}
-	return data
-}
-
-// Unused import placeholders (will be used in full implementation)
+// Unused import placeholders
 var _ = io.EOF
