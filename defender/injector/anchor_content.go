@@ -48,9 +48,9 @@ func (a *ContentAnchor) Inject(inputPath, outputPath string, payload []byte) err
 	}
 
 	// Prepare payload with magic header
-	contentMagicHeaderCopy := make([]byte, len(contentMagicHeader))
-	copy(contentMagicHeaderCopy, contentMagicHeader)
-	fullPayload := append(contentMagicHeaderCopy, payload...)
+	fullPayload := make([]byte, 0, len(contentMagicHeader)+len(payload))
+	fullPayload = append(fullPayload, contentMagicHeader...)
+	fullPayload = append(fullPayload, payload...)
 	fmt.Printf("[DEBUG] Content: Payload size %d bytes\n", len(fullPayload))
 
 	injectedCount := 0

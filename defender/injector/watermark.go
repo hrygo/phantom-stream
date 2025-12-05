@@ -61,10 +61,7 @@ func Sign(filePath, message, key string, selectedAnchors []string) error {
 	registry := NewAnchorRegistry()
 	allAnchors := registry.GetAvailableAnchors()
 
-	anchorsToUse, err := resolveAnchors(allAnchors, selectedAnchors)
-	if err != nil {
-		return err
-	}
+	anchorsToUse := resolveAnchors(allAnchors, selectedAnchors)
 
 	if len(anchorsToUse) == 0 {
 		return fmt.Errorf("no valid anchors selected")
@@ -74,7 +71,7 @@ func Sign(filePath, message, key string, selectedAnchors []string) error {
 	return executeInjectionChain(filePath, message, payload, anchorsToUse)
 }
 
-func resolveAnchors(allAnchors []Anchor, selectedAnchors []string) ([]Anchor, error) {
+func resolveAnchors(allAnchors []Anchor, selectedAnchors []string) []Anchor {
 	var anchorsToUse []Anchor
 	targetNames := selectedAnchors
 	if len(targetNames) == 0 {
@@ -89,7 +86,7 @@ func resolveAnchors(allAnchors []Anchor, selectedAnchors []string) ([]Anchor, er
 			}
 		}
 	}
-	return anchorsToUse, nil
+	return anchorsToUse
 }
 
 func executeInjectionChain(filePath, message string, payload []byte, anchorsToUse []Anchor) error {

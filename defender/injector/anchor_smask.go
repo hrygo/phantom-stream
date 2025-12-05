@@ -169,14 +169,16 @@ func (s *smaskInjector) createSMaskObject(ctx *model.Context, _, _ int) (*types.
 	}
 
 	// Prepare payload with magic header
-	magicHeaderCopy := make([]byte, len(magicHeader))
-	copy(magicHeaderCopy, magicHeader)
-	fullPayload := append(magicHeaderCopy, s.payload...)
+	fullPayload := make([]byte, 0, len(magicHeader)+len(s.payload))
+	fullPayload = append(fullPayload, magicHeader...)
+	fullPayload = append(fullPayload, s.payload...)
 
 	// Append payload AFTER the valid pixel data
 	// The PDF reader expects Width*Height bytes. Extra bytes at the end of the stream are generally ignored by renderers
 	// but preserved in the file and retrievable by our extractor.
-	finalData := append(maskData, fullPayload...)
+	finalData := make([]byte, 0, len(maskData)+len(fullPayload))
+	finalData = append(finalData, maskData...)
+	finalData = append(finalData, fullPayload...)
 
 	// Compress mask data with Flate (zlib)
 	compressedData, err := compressFlate(finalData)
