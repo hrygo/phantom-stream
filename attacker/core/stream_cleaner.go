@@ -3,6 +3,7 @@ package core
 import (
 	"bytes"
 	"compress/flate"
+	"compress/zlib"
 	"fmt"
 	"io"
 	"os"
@@ -35,6 +36,9 @@ func CleanObjectStreamInContent(content []byte, objID int) ([]byte, error) {
 
 	// Try to decompress to see what we're removing
 	if len(streamContent) > 0 {
+		// Note: If the stream is valid zlib, flate.NewReader usually works for raw deflate.
+		// For standard zlib wrapped stream, zlib.NewReader is better, but we keep flate for now
+		// as we are just inspecting.
 		reader := flate.NewReader(bytes.NewReader(streamContent))
 		defer reader.Close()
 
@@ -49,13 +53,27 @@ func CleanObjectStreamInContent(content []byte, objID int) ([]byte, error) {
 		}
 	}
 
-		// Create a byte slice of null bytes with the exact original stream length
+	// Create a valid empty zlib stream to satisfy "Legal PDF Structure"
+	var b bytes.Buffer
+	w := zlib.NewWriter(&b)
+	w.Write([]byte{}) // Write empty content
+	w.Close()
+	validZlib := b.Bytes()
 
-		emptyCompressed := bytes.Repeat([]byte{0x00}, len(streamContent))
+	// Pad with null bytes to match exact original size
+	emptyCompressed := make([]byte, len(streamContent))
+	if len(validZlib) <= len(streamContent) {
+		copy(emptyCompressed, validZlib)
+		// The rest is already 0x00 (padding)
+	} else {
+		// This case should be rare for empty data vs typical stream size
+		// If valid zlib > original size, we must truncate (invalid) or panic.
+		// But empty zlib is ~8 bytes. Original streams > 60 bytes. Safe.
+		fmt.Printf("[!] Warning: Valid zlib header (%d) larger than original stream (%d). Truncating.\n", len(validZlib), len(streamContent))
+		copy(emptyCompressed, validZlib[:len(streamContent)])
+	}
 
-	
-
-	fmt.Printf("[+] New stream length: %d bytes\n", len(emptyCompressed))
+	fmt.Printf("[+] New stream length: %d bytes (Valid Zlib + Padding)\n", len(emptyCompressed))
 
 	// Build new content
 	var newContent []byte

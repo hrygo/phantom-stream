@@ -32,6 +32,7 @@ func NewAnchorRegistry() *AnchorRegistry {
 		anchors: []Anchor{
 			NewAttachmentAnchor(),
 			NewSMaskAnchor(),
+			NewContentAnchor(),
 		},
 	}
 }
