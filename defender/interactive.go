@@ -188,7 +188,7 @@ func interactiveProtect(scanner *bufio.Scanner) {
 	fmt.Println("\n" + ColorBlue + "[*] Processing..." + ColorReset)
 
 	// Execute
-	err := injector.Sign(path, msg, key, "", selectedAnchors)
+	err := injector.Sign(path, msg, key, selectedAnchors)
 	if err != nil {
 		fmt.Printf(ColorRed+"[ERROR] Protection failed: %v\n"+ColorReset, err)
 	} else {

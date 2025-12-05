@@ -26,21 +26,18 @@ func TestWatermarkDualAnchorSign(t *testing.T) {
 		name        string
 		message     string
 		key         string
-		round       string
 		expectError bool
 	}{
 		{
 			name:        "Valid dual-anchor signature",
 			message:     "WatermarkDualAnchor:Test-DualAnchor",
 			key:         testKey32,
-			round:       "Test",
 			expectError: false,
 		},
 		{
 			name:        "Long message",
 			message:     "WatermarkDualAnchor:VeryLongMessage-" + string(make([]byte, 100)),
 			key:         testKey32,
-			round:       "Test",
 			expectError: false,
 		},
 	}
@@ -48,7 +45,7 @@ func TestWatermarkDualAnchorSign(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test signing
-			err := Sign(testPDFPath, tt.message, tt.key, tt.round, nil)
+			err := Sign(testPDFPath, tt.message, tt.key, nil)
 
 			if tt.expectError {
 				if err == nil {
@@ -62,7 +59,7 @@ func TestWatermarkDualAnchorSign(t *testing.T) {
 			}
 
 			// Verify signed file exists
-			expectedPath := testPDFPath[:len(testPDFPath)-4] + "_" + tt.round + "_signed.pdf"
+			expectedPath := testPDFPath[:len(testPDFPath)-4] + "_signed.pdf"
 			if _, err := os.Stat(expectedPath); os.IsNotExist(err) {
 				t.Errorf("Signed file not created: %s", expectedPath)
 				return
@@ -82,15 +79,14 @@ func TestWatermarkDualAnchorVerify(t *testing.T) {
 	}
 
 	testMessage := "WatermarkDualAnchor:Verify-Test"
-	testRound := "VerifyTest"
 
 	// Create signed PDF
-	err := Sign(testPDFPath, testMessage, testKey32, testRound, nil)
+	err := Sign(testPDFPath, testMessage, testKey32, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test signed PDF: %v", err)
 	}
 
-	signedPath := testPDFPath[:len(testPDFPath)-4] + "_" + testRound + "_signed.pdf"
+	signedPath := testPDFPath[:len(testPDFPath)-4] + "_signed.pdf"
 	defer os.Remove(signedPath)
 
 	tests := []struct {
@@ -142,15 +138,14 @@ func TestWatermarkDualAnchorSMaskAnchorFallback(t *testing.T) {
 	}
 
 	testMessage := "WatermarkDualAnchor:SMask-Fallback-Test"
-	testRound := "SMaskTest"
 
 	// Create signed PDF
-	err := Sign(testPDFPath, testMessage, testKey32, testRound, nil)
+	err := Sign(testPDFPath, testMessage, testKey32, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test signed PDF: %v", err)
 	}
 
-	signedPath := testPDFPath[:len(testPDFPath)-4] + "_" + testRound + "_signed.pdf"
+	signedPath := testPDFPath[:len(testPDFPath)-4] + "_signed.pdf"
 	defer os.Remove(signedPath)
 
 	// Remove attachment to test SMask fallback
@@ -181,15 +176,14 @@ func TestWatermarkDualAnchorAttachmentAnchorOnly(t *testing.T) {
 	}
 
 	testMessage := "WatermarkDualAnchor:Attachment-Only-Test"
-	testRound := "AttachTest"
 
 	// Create signed PDF
-	err := Sign(testPDFPath, testMessage, testKey32, testRound, nil)
+	err := Sign(testPDFPath, testMessage, testKey32, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test signed PDF: %v", err)
 	}
 
-	signedPath := testPDFPath[:len(testPDFPath)-4] + "_" + testRound + "_signed.pdf"
+	signedPath := testPDFPath[:len(testPDFPath)-4] + "_signed.pdf"
 	defer os.Remove(signedPath)
 
 	// Verify using attachment anchor (should succeed first)
@@ -257,8 +251,6 @@ func TestWatermarkDualAnchorFileSizeImpact(t *testing.T) {
 		t.Skip("Test PDF not found, skipping Phase 7 file size test")
 	}
 
-	testRound := "SizeTest"
-
 	// Get original file size
 	origInfo, err := os.Stat(testPDFPath)
 	if err != nil {
@@ -267,12 +259,12 @@ func TestWatermarkDualAnchorFileSizeImpact(t *testing.T) {
 	origSize := origInfo.Size()
 
 	// Create signed PDF
-	err = Sign(testPDFPath, "WatermarkDualAnchor:Size-Test", testKey32, testRound, nil)
+	err = Sign(testPDFPath, "WatermarkDualAnchor:Size-Test", testKey32, nil)
 	if err != nil {
 		t.Fatalf("Failed to sign PDF: %v", err)
 	}
 
-	signedPath := testPDFPath[:len(testPDFPath)-4] + "_" + testRound + "_signed.pdf"
+	signedPath := testPDFPath[:len(testPDFPath)-4] + "_signed.pdf"
 	defer os.Remove(signedPath)
 
 	// Get signed file size
@@ -307,14 +299,13 @@ func BenchmarkWatermarkDualAnchorSign(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		testRound := "Bench" + string(rune(i))
-		err := Sign(testPDFPath, testMessage, testKey32, testRound, nil)
+		err := Sign(testPDFPath, testMessage, testKey32, nil)
 		if err != nil {
 			b.Fatalf("Sign failed: %v", err)
 		}
 
 		// Clean up
-		signedPath := testPDFPath[:len(testPDFPath)-4] + "_" + testRound + "_signed.pdf"
+		signedPath := testPDFPath[:len(testPDFPath)-4] + "_signed.pdf"
 		os.Remove(signedPath)
 	}
 }
@@ -327,15 +318,14 @@ func BenchmarkWatermarkDualAnchorVerify(b *testing.B) {
 	}
 
 	testMessage := "WatermarkDualAnchor:Benchmark-Verify-Test"
-	testRound := "BenchVerify"
 
 	// Create signed PDF once
-	err := Sign(testPDFPath, testMessage, testKey32, testRound, nil)
+	err := Sign(testPDFPath, testMessage, testKey32, nil)
 	if err != nil {
 		b.Fatalf("Failed to create test signed PDF: %v", err)
 	}
 
-	signedPath := testPDFPath[:len(testPDFPath)-4] + "_" + testRound + "_signed.pdf"
+	signedPath := testPDFPath[:len(testPDFPath)-4] + "_signed.pdf"
 	defer os.Remove(signedPath)
 
 	b.ResetTimer()

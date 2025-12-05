@@ -1,12 +1,12 @@
 # 🛡️ Defender - PDF 水印嵌入与验证工具
 
-**执行摘要**: Defender 是 PhantomStream 攻防演习系统的防守方工具，旨在 PDF 文件中嵌入加密的追踪信息，并提供强大的验证机制。经过多轮攻防演习，Defender 已从最初的单锚点防御（Phase 5）升级至 **Phase 7.1 双轨验证（附件 + SMask）**，并通过 **Phase 7.2 架构重构**显著提升了系统的可扩展性和维护性。目前，Defender 能够有效抵御红队已知的各种攻击手段，提供高隐蔽性和强韧性的追踪信息保护。
+**执行摘要**: Defender 是 PhantomStream 攻防演习系统的防守方工具，旨在 PDF 文件中嵌入加密的追踪信息，并提供强大的验证机制。经过多轮攻防演习，Defender 已从最初的单锚点防御（Phase 5）升级至 **Phase 8 多锚点防御（Attachment + SMask + Content + Visual）**，并通过架构重构显著提升了系统的可扩展性和维护性。目前，Defender 能够有效抵御红队已知的各种攻击手段，提供高隐蔽性和强韧性的追踪信息保护。
 
 ## 📋 目录
 
 - [执行摘要](#执行摘要)
 - [特性](#特性)
-- [技术原理：双锚点防御](#技术原理：双锚点防御)
+- [技术原理：多锚点防御](#技术原理多锚点防御)
 - [安装](#安装)
 - [快速开始](#快速开始)
 - [使用指南](#使用指南)
@@ -14,32 +14,30 @@
   - [设计原则](#设计原则)
   - [模块结构](#模块结构)
   - [核心组件](#核心组件)
-  - [工作流程](#工作流程)
-  - [扩展性示例](#扩展性示例)
-  - [性能指标](#性能指标)
-  - [安全特性](#安全特性)
-  - [测试覆盖](#测试覆盖)
-  - [向后兼容](#向后兼容)
-  - [未来规划](#未来规划)
-- [安全性：深入解析](#安全性：深入解析)
+- [工作流程](#工作流程)
+- [扩展性示例](#扩展性示例)
+- [性能指标](#性能指标)
+- [安全性：深入解析](#安全性深入解析)
 - [攻防演习历史](#攻防演习历史)
 - [FAQ](#faq)
+- [未来改进方向](#未来改进方向)
 - [许可证](#许可证)
 - [贡献](#贡献)
 
 ## ✨ 特性
 
 - **🔐 强加密保护**：使用 AES-256-GCM 加密算法，确保追踪信息安全
-- **🔗 双轨验证**：引入附件和图像 SMask 双锚点，显著提升签名韧性
-- **🕵️‍♂️ 极高隐蔽性**：SMask 锚点利用图像透明蒙版，不易被察觉
+- **🔗 多锚点防御**：支持 Attachment、SMask、Content、Visual 四种锚点策略
+- **🕵️‍♂️ 极高隐蔽性**：SMask 和 Content 锚点不易被察觉和清除
 - **🛡️ 抗清洗攻击**：有效抵御红队精准流清洗等多种攻击手段
-- **✅ 易于验证**：支持多锚点容错验证，任一锚点存活即可恢复信息
-- **🔄 架构灵活**： Phase 7.2 架构重构支持轻松扩展新锚点类型
+- **✅ 智能验证**：支持 Auto（快速）和 All（完整诊断）两种验证模式
+- **🔄 架构灵活**：模块化设计支持轻松扩展新锚点类型
+- **🎯 易用性增强**：交互模式提供 Lookup 功能，一键验证上次签名文件
 - **📦 零依赖部署**：编译为单个二进制文件，无需额外依赖
 
-## 🔬 技术原理：双锚点防御
+## 🔬 技术原理：多锚点防御
 
-Defender 采用 **Phase 7.1 双轨验证方案**，通过同时嵌入两个独立的追踪锚点来提升防御韧性：
+Defender 采用 **多锚点防御方案**，通过同时嵌入多个独立的追踪锚点来提升防御韧性：
 
 1.  **主锚点：附件 (Attachment)**  
     - 将加密追踪信息封装为 PDF 标准附件（`font_license.txt`），挂载在文档引用树上。
@@ -49,16 +47,27 @@ Defender 采用 **Phase 7.1 双轨验证方案**，通过同时嵌入两个独�
     - 将备份追踪信息嵌入到 PDF 图像的透明度蒙版（Soft Mask）数据中。
     - **特点**：极高隐蔽性，对视觉无影响，难以被常规工具检测和清除。
 
-**双轨验证机制：**
+3.  **内容锚点：Content Stream**  
+    - 将追踪信息嵌入到页面内容流中，使用不可见的文本操作符。
+    - **特点**：与页面渲染逻辑绑定，清洗可能影响页面显示。
 
--   签名时，两个锚点同时注入。  
--   验证时，任一锚点成功提取并验证即可恢复追踪信息（OR 逻辑）。
+4.  **视觉锚点：Visual Watermark**  
+    - 明文水印，用于震慑作用，不参与自动验证。
+    - **特点**：可见威慑，提醒用户文件受保护。
+
+**多锚点验证机制：**
+
+-   签名时，默认嵌入所有可用锚点（Maximum 模式）。  
+-   验证时，提供两种模式：
+    - **Auto 模式**（默认）：遇到第一个成功的锚点即停止，快速验证。
+    - **All 模式**：逐一尝试所有锚点，显示每一步结果，适合诊断。
 
 **核心优势：**
-1.  **高韧性**：红队必须同时发现并清除两个独立锚点才能使签名完全失效。
-2.  **高隐蔽性**：SMask 锚点利用 PDF 特殊结构，极难被发现。
+1.  **高韧性**：红队必须同时发现并清除所有锚点才能使签名完全失效。
+2.  **高隐蔽性**：SMask 和 Content 锚点利用 PDF 特殊结构，极难被发现。
 3.  **符合标准**：所有锚点均利用 PDF ISO 32000 标准特性，不影响文件阅读。
-4.  **抗破坏性**：任何尝试清除 SMask 锚点的行为都可能导致图像显示异常，从而提升红队的攻击成本。
+4.  **灵活验证**：Auto 模式快速验证，All 模式完整诊断，满足不同场景需求。
+5.  **可见威慑**：Visual 水印提供明文震慑，同时其他锚点提供隐蔽保护。
 
 ## 🚀 安装
 
@@ -82,9 +91,9 @@ go build -o defender
 
 ## 🎯 快速开始
 
-### 1. 签名 PDF 文件 (双锚点)
+### 1. 签名 PDF 文件（多锚点）
 
-为 PDF 文件嵌入追踪信息，默认会尝试嵌入附件和 SMask 双锚点：
+为 PDF 文件嵌入追踪信息，默认会尝试嵌入所有可用锚点（Maximum 模式）：
 
 ```bash
 ./defender sign \
@@ -100,41 +109,59 @@ go build -o defender
 
 **输出示例：**
 ```
-✓ Anchor 1/2: Attachment embedded (54 bytes)
-✓ Anchor 2/2: SMask embedded
-✓ Signature mode: Dual-anchor (Attachment + SMask)
+[*] Injecting Anchor 1/4: Attachment...
+✓ Anchor Attachment embedded
+[*] Injecting Anchor 2/4: SMask...
+✓ Anchor SMask embedded
+[*] Injecting Anchor 3/4: Content...
+✓ Anchor Content embedded
+[*] Injecting Anchor 4/4: Visual...
+✓ Anchor Visual embedded
+✓ Signature mode: 4-anchor strategy
 ✅ Successfully signed PDF: document_signed.pdf
 ```
-**注意**：如果 PDF 文件不包含图像，SMask 锚点将自动降级为单锚点模式（仅附件）。
+**注意**：如果 PDF 文件不包含图像，SMask 锚点将自动跳过。Visual 水印以明文形式显示，用于震慑。
 
-### 2. 验证追踪信息 (多锚点容错)
+### 2. 验证追踪信息（多锚点容错）
 
-从签名的 PDF 文件中提取并验证追踪信息。只要任一锚点有效，即可成功验证：
+从签名的 PDF 文件中提取并验证追踪信息。支持两种验证模式：
 
+**Auto 模式（默认，快速验证）**：
 ```bash
 ./defender verify \
   -f /path/to/document_signed.pdf \
   -k "12345678901234567890123456789012"
 ```
 
-**输出示例：**
+**All 模式（完整诊断）**：
+```bash
+./defender verify \
+  -f /path/to/document_signed.pdf \
+  -k "12345678901234567890123456789012" \
+  --mode=all
+```
+
+**Auto 模式输出示例：**
 ```
 🔍 Defender Verify Operation
    File: document_signed.pdf
 
-✓ Verified via Anchor 1: Attachment
+✓ Verified via Attachment
 ✅ Verification successful!
 📋 Extracted message: "UserID:12345"
 ```
 
-**如果附件被清除，SMask 锚点仍可作为备份进行验证：**
+**All 模式输出示例：**
 ```
 🔍 Defender Verify Operation
-   File: document_signed_noattach.pdf
+   File: document_signed.pdf
 
-✓ Verified via Anchor 2: SMask (backup anchor activated)
-✅ Verification successful!
-📋 Extracted message: "UserID:12345"
+ - Trying Attachment... OK
+   Message(Attachment): UserID:12345
+ - Trying SMask... extract failed
+ - Trying Content... OK
+   Message(Content): UserID:12345
+✅ Verification finished (mode=all).
 ```
 
 ### 3. 交互模式 (Interactive Mode)
@@ -150,22 +177,39 @@ go build -o defender
 ==================================================
    🛡️  Defender - PDF Protection Tool
 ==================================================
-1. Protect PDF
-2. Verify PDF
-3. Exit
+1. 🔒 Protect PDF   (Embed invisible watermark)
+2. 🔍 Verify PDF    (Extract & verify watermark)
+3. 🔎 Lookup       (Verify last protected file, All mode)
+4. 🚺 Exit
 
-Select option (1-3): 1
+Select option (1-4): 1
 
-[?] Enter PDF file path: docs/report.pdf
-[?] Enter watermark message (e.g. 'Confidential'): Secret Project X
-[?] Enter encryption key (32 chars) [Press Enter to generate]: 
+[Step 1/4] Enter PDF file path:
+> docs/report.pdf
+
+[Step 2/4] Enter watermark message:
+> Secret Project X
+
+[Step 3/4] Enter encryption key (32 chars) [Press Enter to generate]:
+> 
 [*] Generated Key: a1b2c3d4e5f6... (32 bytes)
 
-[*] Protecting file... (This may take a moment)
-✓ Anchor 1/2: Attachment embedded (54 bytes)
-✓ Anchor 2/2: SMask embedded
-✓ Signature mode: Dual-anchor (Attachment + SMask)
-✓ Successfully signed PDF: docs/report_signed.pdf
+[Step 4/4] Select protection level:
+1. Standard  (Attachment only)
+2. Stealth   (Attachment + SMask)
+3. Maximum   (All anchors) - Default
+4. Custom    (Select specific anchors)
+> 
+
+[*] Processing...
+[*] Injecting Anchor 1/4: Attachment...
+✓ Anchor Attachment embedded
+[*] Injecting Anchor 2/4: SMask...
+✓ Anchor SMask embedded
+[*] Injecting Anchor 3/4: Content...
+✓ Anchor Content embedded
+[*] Injecting Anchor 4/4: Visual...
+✓ Anchor Visual embedded
 
 ✅ Success! File protected.
 🔑 Key: a1b2c3d4e5f6...
@@ -204,7 +248,18 @@ defender verify [flags]
 Flags:
   -f, --file string   目标 PDF 文件路径 (必填)
   -k, --key string    32 字节解密密钥 (必填)
+  --mode string       验证模式: auto|all (默认 auto)
   -h, --help          显示帮助信息
+```
+
+**使用示例：**
+
+```bash
+# Auto 模式（快速验证）
+./defender verify -f signed.pdf -k "your-32-byte-secret-key-here!!"
+
+# All 模式（完整诊断）
+./defender verify -f signed.pdf -k "your-32-byte-secret-key-here!!" --mode=all
 ```
 
 **可能的错误：**
@@ -460,15 +515,17 @@ Defender 在 PhantomStream 攻防演习中经历了多个阶段的进化：
 | Phase 1-4     | 物理/结构层防御             | 截断 / 间隙覆盖 / 版本回滚 / 图谱修剪 | ❌ 失败          |
 | Phase 5       | 嵌入式附件 (单锚点)         | 语义分析 (成功检测，但无法无损清除)   | ✅ 阶段性成功    |
 | Phase 6       | 流内容清洗突破              | 精准流清洗 (保持字节长度替换内容)     | ❌ 失败 (被突破) |
-| **Phase 7.1** | **双轨验证 (附件 + SMask)** | 深度探测 / 清除附件 (SMask 仍有效)    | ✅ **成功防御**  |
-| **Phase 7.2** | **架构重构**                | (内部优化)                            | ✅ 提升可扩展性  |
+| Phase 7.1     | 双轨验证 (附件 + SMask) | 深度探测 / 清除附件 (SMask 仍有效)    | ✅ 成功防御  |
+| Phase 7.2     | 架构重构                | (内部优化)                            | ✅ 提升可扩展性  |
+| **Phase 8**   | **多锚点防御 (4锚点)** | 继续演习中                            | ✅ **持续防御**  |
 
-**Phase 7.1 成功的关键：**
-- 🎯 引入双锚点策略，显著提升攻击成本。
-- 🌳 SMask 锚点利用图像结构，实现高隐蔽性。
-- 🔄 架构重构支持持续扩展和维护。
+**Phase 8 关键改进：**
+- 🎯 新增 Content 锚点，与页面渲染逻辑绑定。
+- 🌳 新增 Visual 水印，提供明文震慑。
+- 🔄 支持 Auto/All 两种验证模式，灵活适应不同场景。
+- 🎯 交互模式 Lookup 功能，一键验证上次签名。
 
-详细演习报告：[/docs/TOTAL_REPORTv1.0.md](../docs/TOTAL_REPORTv1.0.md)
+详细演习报告：[/docs/PHANTOM_STREAM_JOINT_REPORT.md](../docs/PHANTOM_STREAM_JOINT_REPORT.md)
 
 ## ❓ FAQ
 

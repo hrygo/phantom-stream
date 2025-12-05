@@ -32,7 +32,7 @@ var (
 // Anchor 3 (Phase 8): Content Stream Perturbation - Watermark bound to rendering
 // Sign embeds an encrypted message into a PDF file using selected anchor strategies.
 // selectedAnchors: list of anchor names to use. If empty, uses all available anchors.
-func Sign(filePath, message, key, round string, selectedAnchors []string) error {
+func Sign(filePath, message, key string, selectedAnchors []string) error {
 	// Validate inputs
 	if err := validateInputs(filePath, message, key); err != nil {
 		return fmt.Errorf("validation failed: %w", err)
@@ -51,9 +51,6 @@ func Sign(filePath, message, key, round string, selectedAnchors []string) error 
 
 	// Generate output file paths
 	suffix := "_signed"
-	if round != "" {
-		suffix = "_" + round + "_signed"
-	}
 	tempOutputPath1, err := generateOutputPath(filePath, "_temp1")
 	if err != nil {
 		return fmt.Errorf("failed to generate temp1 output path: %w", err)

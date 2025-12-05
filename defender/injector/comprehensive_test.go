@@ -22,7 +22,6 @@ func TestComprehensiveDefenseStrategy(t *testing.T) {
 
 	testMessage := "PhantomStream:Comprehensive-Test"
 	testKey := testKey32
-	testRound := "CompTest"
 
 	// Define scenarios
 	scenarios := []struct {
@@ -101,9 +100,7 @@ func TestComprehensiveDefenseStrategy(t *testing.T) {
 	for _, tt := range scenarios {
 		t.Run(tt.name, func(t *testing.T) {
 			// 1. Sign
-			// Use a unique round name to avoid collisions
-			round := testRound + "_" + hashString(tt.name)
-			err := Sign(testPDFPath, testMessage, testKey, round, tt.signAnchors)
+			err := Sign(testPDFPath, testMessage, testKey, tt.signAnchors)
 			if err != nil {
 				// If SMask fails due to no images, skip if that was the only one
 				if len(tt.signAnchors) == 1 && tt.signAnchors[0] == "SMask" && err.Error() == "no images found in PDF (SMask anchor requires at least one image)" {
@@ -117,7 +114,7 @@ func TestComprehensiveDefenseStrategy(t *testing.T) {
 			base := filepath.Base(testPDFPath)
 			ext := filepath.Ext(base)
 			name := base[:len(base)-len(ext)]
-			signedPath := filepath.Join(dir, name+"_"+round+"_signed"+ext)
+			signedPath := filepath.Join(dir, name+"_signed"+ext)
 
 			defer os.Remove(signedPath)
 
@@ -211,11 +208,10 @@ func TestNegativeScenarios(t *testing.T) {
 
 	testMessage := "NegativeTest"
 	testKey := testKey32
-	round := "Neg"
 
 	// 1. Sign with Key A, Verify with Key B
 	t.Run("Wrong Key", func(t *testing.T) {
-		err := Sign(testPDFPath, testMessage, testKey, round, nil)
+		err := Sign(testPDFPath, testMessage, testKey, nil)
 		if err != nil {
 			t.Fatalf("Sign failed: %v", err)
 		}
@@ -224,7 +220,7 @@ func TestNegativeScenarios(t *testing.T) {
 		base := filepath.Base(testPDFPath)
 		ext := filepath.Ext(base)
 		name := base[:len(base)-len(ext)]
-		signedPath := filepath.Join(dir, name+"_"+round+"_signed"+ext)
+		signedPath := filepath.Join(dir, name+"_signed"+ext)
 		defer os.Remove(signedPath)
 
 		wrongKey := "00000000000000000000000000000000"
@@ -241,13 +237,4 @@ func TestNegativeScenarios(t *testing.T) {
 			t.Error("Expected verification failure on clean file, got success")
 		}
 	})
-}
-
-// Helper to hash string for unique filenames
-func hashString(s string) string {
-	sum := 0
-	for _, c := range s {
-		sum += int(c)
-	}
-	return string(rune('A' + (sum % 26)))
 }

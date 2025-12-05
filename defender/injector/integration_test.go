@@ -75,10 +75,8 @@ func TestAnchorCombinations(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			round := "ComboTest"
-
 			// 1. Sign
-			err := Sign(testPDFPath, testMessage, testKey, round, tt.selectedAnchors)
+			err := Sign(testPDFPath, testMessage, testKey, tt.selectedAnchors)
 			if err != nil {
 				t.Fatalf("Sign failed: %v", err)
 			}
@@ -88,7 +86,7 @@ func TestAnchorCombinations(t *testing.T) {
 			base := filepath.Base(testPDFPath)
 			ext := filepath.Ext(base)
 			name := base[:len(base)-len(ext)]
-			signedPath := filepath.Join(dir, name+"_"+round+"_signed"+ext)
+			signedPath := filepath.Join(dir, name+"_signed"+ext)
 
 			defer os.Remove(signedPath)
 
