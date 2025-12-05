@@ -53,10 +53,10 @@ func (sc *SafeCleaner) CleanStreamContent() (string, error) {
 	}
 
 	// Extract the three parts
-	before := matches[0]             // Start of object
-	streamStart := matches[2]        // Start of stream content
-	streamEnd := matches[4]          // End of stream content
-	after := matches[5]              // Start after endstream
+	before := matches[0]      // Start of object
+	streamStart := matches[2] // Start of stream content
+	streamEnd := matches[4]   // End of stream content
+	after := matches[5]       // Start after endstream
 
 	// Get the actual stream content
 	contentBytes := sc.Content[streamStart:streamEnd]
@@ -78,9 +78,9 @@ func (sc *SafeCleaner) CleanStreamContent() (string, error) {
 	// Build the new content
 	var newContent []byte
 	newContent = append(newContent, sc.Content[:before]...)
-	newContent = append(newContent, []byte("\n")...)          // Ensure newline after 'stream'
-	newContent = append(newContent, replacement...)           // New compressed data
-	newContent = append(newContent, sc.Content[after:]...)   // Rest of file
+	newContent = append(newContent, []byte("\n")...)       // Ensure newline after 'stream'
+	newContent = append(newContent, replacement...)        // New compressed data
+	newContent = append(newContent, sc.Content[after:]...) // Rest of file
 
 	// Write to output file
 	outputPath := sc.FilePath + "_safe_processed"
@@ -125,4 +125,3 @@ func (sc *SafeCleaner) RemoveEmbeddedFilesRef() (string, error) {
 
 	return outputPath, nil
 }
-

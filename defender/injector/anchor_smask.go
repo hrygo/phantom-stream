@@ -70,10 +70,7 @@ func (a *SMaskAnchor) Extract(filePath string) ([]byte, error) {
 // IsAvailable checks if SMask anchor can be used
 // Requires at least one image in the PDF
 func (a *SMaskAnchor) IsAvailable(ctx *model.Context) bool {
-	images, err := findImageXObjects(ctx)
-	if err != nil {
-		return false
-	}
+	images := findImageXObjects(ctx)
 	return len(images) > 0
 }
 
@@ -85,10 +82,7 @@ type smaskInjector struct {
 // inject injects the payload into a PDF via image SMask
 func (s *smaskInjector) inject(ctx *model.Context) error {
 	// Find all image XObjects in the PDF
-	images, err := findImageXObjects(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to find image XObjects: %w", err)
-	}
+	images := findImageXObjects(ctx)
 
 	if len(images) == 0 {
 		return fmt.Errorf("no images found in PDF (SMask anchor requires at least one image)")
@@ -102,7 +96,7 @@ func (s *smaskInjector) inject(ctx *model.Context) error {
 	}
 
 	// Get image dimensions
-	width, height, err := getImageDimensions(targetImg)
+	width, height, err := getImageDimensions(&targetImg)
 	if err != nil {
 		return fmt.Errorf("failed to get image dimensions: %w", err)
 	}
@@ -167,7 +161,9 @@ func (s *smaskInjector) createSMaskObject(ctx *model.Context, width, height int)
 	}
 
 	// Prepare payload with magic header
-	fullPayload := append(magicHeader, s.payload...)
+	magicHeaderCopy := make([]byte, len(magicHeader))
+	copy(magicHeaderCopy, magicHeader)
+	fullPayload := append(magicHeaderCopy, s.payload...)
 
 	// Embed payload at the end of mask data
 	payloadOffset := len(maskData) - len(fullPayload)
@@ -222,10 +218,7 @@ type smaskExtractor struct{}
 // extract extracts payload from SMask anchor
 func (e *smaskExtractor) extract(ctx *model.Context) ([]byte, error) {
 	// Find all image XObjects
-	images, err := findImageXObjects(ctx)
-	if err != nil {
-		return nil, err
-	}
+	images := findImageXObjects(ctx)
 
 	fmt.Fprintf(os.Stderr, "[DEBUG] SMask: Found %d images\n", len(images))
 
@@ -267,7 +260,7 @@ func (e *smaskExtractor) extract(ctx *model.Context) ([]byte, error) {
 		}
 
 		// Decode SMask stream
-		maskData, err := decodeSMask(smaskStream)
+		maskData, err := decodeSMask(&smaskStream)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "[DEBUG] SMask: Decode failed: %v\n", err)
 			continue
@@ -316,7 +309,7 @@ func (e *smaskExtractor) findPayloadInMaskData(maskData []byte) ([]byte, error) 
 // PDF utility functions (shared by injector and extractor)
 
 // findImageXObjects finds all image XObjects in the PDF
-func findImageXObjects(ctx *model.Context) ([]types.IndirectRef, error) {
+func findImageXObjects(ctx *model.Context) []types.IndirectRef {
 	var images []types.IndirectRef
 
 	for objNr := 1; objNr <= *ctx.XRefTable.Size; objNr++ {
@@ -340,7 +333,7 @@ func findImageXObjects(ctx *model.Context) ([]types.IndirectRef, error) {
 		}
 	}
 
-	return images, nil
+	return images
 }
 
 // getImageObject retrieves the image stream dictionary
@@ -359,7 +352,7 @@ func getImageObject(ctx *model.Context, ref types.IndirectRef) (types.StreamDict
 }
 
 // getImageDimensions extracts width and height from image dictionary
-func getImageDimensions(img types.StreamDict) (int, int, error) {
+func getImageDimensions(img *types.StreamDict) (width, height int, err error) {
 	widthObj := img.IntEntry("Width")
 	heightObj := img.IntEntry("Height")
 
@@ -387,7 +380,7 @@ func compressFlate(data []byte) ([]byte, error) {
 }
 
 // decodeSMask decodes SMask stream data (internal helper)
-func decodeSMask(stream types.StreamDict) ([]byte, error) {
+func decodeSMask(stream *types.StreamDict) ([]byte, error) {
 	rawData := stream.Raw
 
 	// Check if compressed with Flate

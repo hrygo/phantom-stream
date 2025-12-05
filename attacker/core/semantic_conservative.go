@@ -3,6 +3,7 @@ package core
 import (
 	"os"
 	"regexp"
+	"strconv" // Added import
 )
 
 // RemoveSuspiciousContentOnly removes only the suspicious stream content, preserving structure
@@ -33,8 +34,8 @@ func RemoveSuspiciousContentOnly(filePath string) (string, *SemanticResult, erro
 		// Find and clear only the stream content of suspicious embedded files
 		// Look for the stream object and replace its content with placeholder
 		if file.ObjectID > 0 {
-			// Find the EF reference to get stream object ID
-			objPattern := regexp.MustCompile(regexp.QuoteMeta(string(file.ObjectID)) + `\s+0\s+obj\s*<</EF<</F\s+(\d+)\s+0\s+R`)
+			// Fix: Use strconv.Itoa to convert int to string
+			objPattern := regexp.MustCompile(regexp.QuoteMeta(strconv.Itoa(file.ObjectID)) + `\s+0\s+obj\s*<</EF<</F\s+(\d+)\s+0\s+R`)
 			objMatches := objPattern.FindStringSubmatch(string(modifiedContent))
 
 			if len(objMatches) > 1 {

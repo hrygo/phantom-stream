@@ -1,0 +1,75 @@
+name: Bug Report
+description: 报告一个 Bug
+title: "[Bug]: "
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢您报告 Bug！请填写以下信息帮助我们更好地定位和解决问题。
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug 描述
+      description: 清晰简洁地描述这个 Bug
+      placeholder: 在使用 phantom-guard sign 时...
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: 复现步骤
+      description: 详细描述如何复现这个问题
+      placeholder: |
+        1. 执行命令 '...'
+        2. 打开文件 '...'
+        3. 看到错误 '...'
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+      description: 描述您期望发生什么
+      placeholder: 应该成功生成带水印的 PDF...
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际行为
+      description: 描述实际发生了什么
+      placeholder: 但是报错...
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 请提供您的环境信息
+      value: |
+        - OS: [例如 macOS 14.0, Ubuntu 22.04, Windows 11]
+        - Go Version: [例如 1.24.0]
+        - phantom-guard Version: [例如 1.0.0]
+      render: markdown
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志
+      description: 如果有相关的错误日志或输出，请粘贴在这里
+      render: shell
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 补充信息
+      description: 其他任何可能有帮助的信息
+      placeholder: 例如 PDF 文件大小、特殊格式等...

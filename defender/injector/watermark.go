@@ -173,10 +173,10 @@ func Sign(filePath, message, key string, selectedAnchors []string) error {
 // Verify extracts and decrypts the hidden message from a signed PDF file.
 // selectedAnchors: list of anchor names to verify. If empty, verifies all.
 // Returns the extracted message and the name of the anchor that succeeded.
-func Verify(filePath, key string, selectedAnchors []string) (string, string, error) {
+func Verify(filePath, key string, selectedAnchors []string) (message, anchorName string, err error) {
 	// Validate inputs
-	if err := validateVerifyInputs(filePath, key); err != nil {
-		return "", "", fmt.Errorf("validation failed: %w", err)
+	if validationErr := validateVerifyInputs(filePath, key); validationErr != nil {
+		return "", "", fmt.Errorf("validation failed: %w", validationErr)
 	}
 
 	// Create crypto manager

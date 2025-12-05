@@ -33,7 +33,8 @@ func InstallEmbeddedUnicodeFont() error {
 	defer os.RemoveAll(tmpDir)
 
 	ttfPath := filepath.Join(tmpDir, "GoNotoCurrent-Regular.ttf")
-	if err := os.WriteFile(ttfPath, goNotoCurrentTTF, 0644); err != nil {
+	// gosec: G306 - Temporary font file with 0600 permissions for security
+	if err := os.WriteFile(ttfPath, goNotoCurrentTTF, 0600); err != nil {
 		return err
 	}
 	return api.InstallFonts([]string{ttfPath})

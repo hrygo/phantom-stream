@@ -10,6 +10,11 @@ import (
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
 )
 
+const (
+	// AnchorNameVisual is the name of the visual watermark anchor
+	AnchorNameVisual = "Visual"
+)
+
 var (
 	// fontInstalled tracks whether we've attempted to install a Unicode font
 	fontInstalled bool
@@ -26,7 +31,7 @@ func NewVisualAnchor() *VisualAnchor {
 }
 
 func (a *VisualAnchor) Name() string {
-	return "Visual"
+	return AnchorNameVisual
 }
 
 // IsAvailable checks if the PDF has pages
@@ -55,8 +60,8 @@ func (a *VisualAnchor) Inject(inputPath, outputPath string, payload []byte) erro
 	// Install embedded font once
 	fontMutex.Lock()
 	if !fontInstalled {
-		if err := InstallEmbeddedUnicodeFont(); err != nil {
-			fmt.Fprintf(os.Stderr, "[WARN] Failed to install embedded Unicode font: %v\n", err)
+		if fontErr := InstallEmbeddedUnicodeFont(); fontErr != nil {
+			fmt.Fprintf(os.Stderr, "[WARN] Failed to install embedded Unicode font: %v\n", fontErr)
 		}
 		fontInstalled = true
 	}
@@ -70,7 +75,9 @@ func (a *VisualAnchor) Inject(inputPath, outputPath string, payload []byte) erro
 	//   - pdfcpu combines them as: "{Family}-{Style}" = "GoNotoCurrent-Regular-Regular"
 	// This name must match the .gob file in ~/Library/Application Support/pdfcpu/fonts/
 	// DO NOT change this name unless you replace the embedded font file.
-	wmConf, err = api.TextWatermark(watermarkText, "font:GoNotoCurrent-Regular-Regular, points:48, rot:45, op:0.3, col:0.5 0.5 0.5", true, false, types.POINTS)
+	wmConf, err = api.TextWatermark(watermarkText,
+		"font:GoNotoCurrent-Regular-Regular, points:48, rot:45, op:0.3, col:0.5 0.5 0.5",
+		true, false, types.POINTS)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[WARN] Embedded Unicode font unavailable, fallback to Helvetica: %v\n", err)
 		wmConf, err = api.TextWatermark(watermarkText, "font:Helvetica, points:48, rot:45, op:0.3, col:0.5 0.5 0.5", true, false, types.POINTS)

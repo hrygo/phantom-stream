@@ -49,6 +49,17 @@ func main() {
 	deepscanCmd := flag.NewFlagSet("deepscan", flag.ExitOnError)
 	deepscanFile := deepscanCmd.String("f", "", "Path to PDF file")
 
+	watermarkCmd := flag.NewFlagSet("watermark", flag.ExitOnError)
+	watermarkFile := watermarkCmd.String("f", "", "Path to PDF file")
+
+	heuristicCmd := flag.NewFlagSet("heuristic", flag.ExitOnError)
+	heuristicFile := heuristicCmd.String("f", "", "Path to PDF file")
+	thresholdParam := heuristicCmd.Float64("t", 0.8, "Frequency threshold (0.0 - 1.0)")
+
+	cleanAllCmd := flag.NewFlagSet("clean-all", flag.ExitOnError)
+	cleanAllFile := cleanAllCmd.String("f", "", "Path to PDF file")
+	cleanAllThreshold := cleanAllCmd.Float64("t", 0.8, "Frequency threshold (0.0 - 1.0)")
+
 	switch os.Args[1] {
 	case "scan":
 		scanCmd.Parse(os.Args[2:])
@@ -138,6 +149,30 @@ func main() {
 			os.Exit(1)
 		}
 		handleDeepScan(*deepscanFile)
+	case "watermark":
+		watermarkCmd.Parse(os.Args[2:])
+		if *watermarkFile == "" {
+			fmt.Println("Error: -f (file) argument is required")
+			watermarkCmd.PrintDefaults()
+			os.Exit(1)
+		}
+		handleWatermark(*watermarkFile)
+	case "heuristic":
+		heuristicCmd.Parse(os.Args[2:])
+		if *heuristicFile == "" {
+			fmt.Println("Error: -f (file) argument is required")
+			heuristicCmd.PrintDefaults()
+			os.Exit(1)
+		}
+		handleHeuristic(*heuristicFile, *thresholdParam)
+	case "clean-all":
+		cleanAllCmd.Parse(os.Args[2:])
+		if *cleanAllFile == "" {
+			fmt.Println("Error: -f (file) argument is required")
+			cleanAllCmd.PrintDefaults()
+			os.Exit(1)
+		}
+		handleCleanAll(*cleanAllFile, *cleanAllThreshold)
 	default:
 		printUsage()
 		os.Exit(1)
@@ -158,6 +193,41 @@ func printUsage() {
 	fmt.Println("  attacker signature -f <file.pdf>")
 	fmt.Println("  attacker incremental -f <file.pdf> -obj <id>")
 	fmt.Println("  attacker deepscan -f <file.pdf>  (Phase 7)")
+	fmt.Println("  attacker watermark -f <file.pdf> (Targeted Watermark Removal)")
+	fmt.Println("  attacker heuristic -f <file.pdf> -t 0.8 (Dynamic Frequency Analysis)")
+	fmt.Println("  attacker clean-all -f <file.pdf> -t 0.8 (Full-Spectrum Cleaning)")
+}
+
+func handleCleanAll(file string, threshold float64) {
+	outPath, err := core.ComprehensiveClean(file, threshold)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("[+] Full-Spectrum Cleaning successful! Output: %s\n", outPath)
+}
+
+func handleHeuristic(file string, threshold float64) {
+	fmt.Printf("Running Heuristic Frequency Analysis on %s (Threshold: %.2f)...\n", file, threshold)
+	outPath, count, err := core.HeuristicClean(file, threshold)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("[+] Heuristic Clean Complete!\n")
+	fmt.Printf("[+] Neutralized %d global objects.\n", count)
+	fmt.Printf("[+] Saved to: %s\n", outPath)
+}
+
+func handleWatermark(file string) {
+	fmt.Printf("Removing Specific Watermark from %s...\n", file)
+	outPath, count, err := core.RemoveSpecificWatermark(file)
+	if err != nil {
+		fmt.Printf("Error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("[+] Successfully removed %d watermark objects.\n", count)
+	fmt.Printf("[+] Cleaned file saved to: %s\n", outPath)
 }
 
 func handleScan(file string) {

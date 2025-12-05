@@ -59,21 +59,23 @@
 				
 				<option value="file1">defender/injector/anchor_attachment.go (73.3%)</option>
 				
-				<option value="file2">defender/injector/anchor_content.go (77.7%)</option>
+				<option value="file2">defender/injector/anchor_content.go (77.9%)</option>
 				
-				<option value="file3">defender/injector/anchor_smask.go (76.8%)</option>
+				<option value="file3">defender/injector/anchor_smask.go (78.7%)</option>
 				
-				<option value="file4">defender/injector/anchor_visual.go (75.0%)</option>
+				<option value="file4">defender/injector/anchor_visual.go (73.9%)</option>
 				
 				<option value="file5">defender/injector/crypto.go (86.1%)</option>
 				
-				<option value="file6">defender/injector/validation.go (84.6%)</option>
+				<option value="file6">defender/injector/font_embed.go (75.0%)</option>
 				
-				<option value="file7">defender/injector/watermark.go (83.0%)</option>
+				<option value="file7">defender/injector/validation.go (84.6%)</option>
 				
-				<option value="file8">defender/interactive.go (0.0%)</option>
+				<option value="file8">defender/injector/watermark.go (83.0%)</option>
 				
-				<option value="file9">defender/main.go (0.0%)</option>
+				<option value="file9">defender/interactive.go (0.0%)</option>
+				
+				<option value="file10">defender/main.go (0.0%)</option>
 				
 				</select>
 			</div>
@@ -177,55 +179,55 @@ func NewAttachmentAnchor() *AttachmentAnchor <span class="cov7" title="38">{
 }</span>
 
 // Name returns the anchor type name
-func (a *AttachmentAnchor) Name() string <span class="cov10" title="129">{
+func (a *AttachmentAnchor) Name() string <span class="cov10" title="131">{
         return "Attachment"
 }</span>
 
 // Inject embeds the payload as a PDF attachment
-func (a *AttachmentAnchor) Inject(inputPath, outputPath string, payload []byte) error <span class="cov6" title="15">{
+func (a *AttachmentAnchor) Inject(inputPath, outputPath string, payload []byte) error <span class="cov5" title="15">{
         // Create temporary directory for attachment
         tmpDir, err := os.MkdirTemp("", "defender_attach_*")
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("failed to create temp directory: %w", err)
         }</span>
-        <span class="cov6" title="15">defer func() </span><span class="cov6" title="15">{
+        <span class="cov5" title="15">defer func() </span><span class="cov5" title="15">{
                 if cleanErr := os.RemoveAll(tmpDir); cleanErr != nil </span><span class="cov0" title="0">{
                         fmt.Fprintf(os.Stderr, "Warning: failed to clean temp directory: %v\n", cleanErr)
                 }</span>
         }()
 
         // Write payload to temporary file
-        <span class="cov6" title="15">payloadPath := filepath.Join(tmpDir, attachName)
+        <span class="cov5" title="15">payloadPath := filepath.Join(tmpDir, attachName)
         if err := os.WriteFile(payloadPath, payload, 0600); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("failed to write payload: %w", err)
         }</span>
 
         // Add attachment to PDF
-        <span class="cov6" title="15">conf := model.NewDefaultConfiguration()
+        <span class="cov5" title="15">conf := model.NewDefaultConfiguration()
         if err := api.AddAttachmentsFile(inputPath, outputPath, []string{payloadPath}, true, conf); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("failed to add attachment to PDF: %w", err)
         }</span>
 
-        <span class="cov6" title="15">return nil</span>
+        <span class="cov5" title="15">return nil</span>
 }
 
 // Extract retrieves the payload from PDF attachment
-func (a *AttachmentAnchor) Extract(filePath string) ([]byte, error) <span class="cov6" title="15">{
+func (a *AttachmentAnchor) Extract(filePath string) ([]byte, error) <span class="cov5" title="15">{
         tmpDir, err := os.MkdirTemp("", "defender_verify_*")
         if err != nil </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("failed to create temp directory: %w", err)
         }</span>
-        <span class="cov6" title="15">defer func() </span><span class="cov6" title="15">{
+        <span class="cov5" title="15">defer func() </span><span class="cov5" title="15">{
                 if cleanErr := os.RemoveAll(tmpDir); cleanErr != nil </span><span class="cov0" title="0">{
                         fmt.Fprintf(os.Stderr, "Warning: failed to clean temp directory: %v\n", cleanErr)
                 }</span>
         }()
 
-        <span class="cov6" title="15">conf := model.NewDefaultConfiguration()
+        <span class="cov5" title="15">conf := model.NewDefaultConfiguration()
 
         // Extract attachment from PDF
-        if err := api.ExtractAttachmentsFile(filePath, tmpDir, []string{attachName}, conf); err != nil </span><span class="cov5" title="9">{
-                return nil, fmt.Errorf("%w: %v", ErrAttachmentNotFound, err)
+        if extractErr := api.ExtractAttachmentsFile(filePath, tmpDir, []string{attachName}, conf); extractErr != nil </span><span class="cov5" title="9">{
+                return nil, fmt.Errorf("%w: %v", ErrAttachmentNotFound, extractErr)
         }</span>
 
         <span class="cov4" title="6">extractedPath := filepath.Join(tmpDir, attachName)
@@ -271,7 +273,7 @@ func NewContentAnchor() *ContentAnchor <span class="cov4" title="38">{
         return &amp;ContentAnchor{}
 }</span>
 
-func (a *ContentAnchor) Name() string <span class="cov5" title="103">{
+func (a *ContentAnchor) Name() string <span class="cov5" title="104">{
         return "Content"
 }</span>
 
@@ -294,7 +296,9 @@ func (a *ContentAnchor) Inject(inputPath, outputPath string, payload []byte) err
         }</span>
 
         // Prepare payload with magic header
-        <span class="cov3" title="16">fullPayload := append(contentMagicHeader, payload...)
+        <span class="cov3" title="16">contentMagicHeaderCopy := make([]byte, len(contentMagicHeader))
+        copy(contentMagicHeaderCopy, contentMagicHeader)
+        fullPayload := append(contentMagicHeaderCopy, payload...)
         fmt.Printf("[DEBUG] Content: Payload size %d bytes\n", len(fullPayload))
 
         injectedCount := 0
@@ -372,9 +376,9 @@ func (a *ContentAnchor) Inject(inputPath, outputPath string, payload []byte) err
                 // Compress
                 var buf bytes.Buffer
                 w := zlib.NewWriter(&amp;buf)
-                if _, err := w.Write(contentData); err != nil </span><span class="cov0" title="0">{
+                if _, writeErr := w.Write(contentData); writeErr != nil </span><span class="cov0" title="0">{
                         w.Close()
-                        fmt.Printf("[DEBUG] Content: Failed to write to zlib writer: %v\n", err)
+                        fmt.Printf("[DEBUG] Content: Failed to write to zlib writer: %v\n", writeErr)
                         continue</span>
                 }
                 <span class="cov5" title="80">w.Close()
@@ -396,15 +400,16 @@ func (a *ContentAnchor) Inject(inputPath, outputPath string, payload []byte) err
 
                 // 3. Append new stream to page Contents
                 <span class="cov5" title="80">if contentObj, ok := pageDict["Contents"]; ok </span><span class="cov5" title="80">{
-                        if ref, ok := contentObj.(types.IndirectRef); ok </span><span class="cov5" title="64">{
+                        switch obj := contentObj.(type) </span>{
+                        case types.IndirectRef:<span class="cov5" title="64">
                                 // Convert single ref to array: [OldRef, NewRef]
-                                arr := types.Array{ref, *streamIndRef}
-                                pageDict["Contents"] = arr
-                        }</span> else<span class="cov3" title="16"> if arr, ok := contentObj.(types.Array); ok </span><span class="cov3" title="16">{
+                                arr := types.Array{obj, *streamIndRef}
+                                pageDict["Contents"] = arr</span>
+                        case types.Array:<span class="cov3" title="16">
                                 // Append to existing array
-                                arr = append(arr, *streamIndRef)
-                                pageDict["Contents"] = arr
-                        }</span> else<span class="cov0" title="0"> {
+                                obj = append(obj, *streamIndRef)
+                                pageDict["Contents"] = obj</span>
+                        default:<span class="cov0" title="0">
                                 // Unknown type, overwrite (risky) or skip
                                 fmt.Printf("[DEBUG] Content: Unknown Contents type for page %d\n", i)
                                 continue</span>
@@ -448,39 +453,39 @@ func (a *ContentAnchor) Extract(filePath string) ([]byte, error) <span class="co
         // Simplified: Look for brackets containing ( ) and numbers
         // We look for the sequence that matches our encoding pattern
 
-        <span class="cov3" title="8">for objNr := 1; objNr &lt;= *ctx.XRefTable.Size; objNr++ </span><span class="cov7" title="593">{
+        <span class="cov3" title="8">for objNr := 1; objNr &lt;= *ctx.XRefTable.Size; objNr++ </span><span class="cov7" title="599">{
                 entry, found := ctx.Find(objNr)
                 if !found || entry.Free || entry.Object == nil </span><span class="cov5" title="59">{
                         continue</span>
                 }
 
-                <span class="cov7" title="534">sd, ok := entry.Object.(types.StreamDict)
-                if !ok </span><span class="cov6" title="292">{
+                <span class="cov7" title="540">sd, ok := entry.Object.(types.StreamDict)
+                if !ok </span><span class="cov6" title="295">{
                         continue</span>
                 }
 
-                <span class="cov6" title="242">if sd.Subtype() != nil </span><span class="cov5" title="57">{
+                <span class="cov6" title="245">if sd.Subtype() != nil </span><span class="cov5" title="57">{
                         continue</span>
                 }
 
                 // Decode the stream
-                <span class="cov6" title="185">if err := sd.Decode(); err != nil </span><span class="cov0" title="0">{
+                <span class="cov6" title="188">if err := sd.Decode(); err != nil </span><span class="cov0" title="0">{
                         continue</span>
                 }
 
-                <span class="cov6" title="185">content := sd.Content
+                <span class="cov6" title="188">content := sd.Content
                 if len(content) == 0 </span><span class="cov0" title="0">{
                         continue</span>
                 }
 
-                <span class="cov6" title="185">contentStr := string(content)
-                if !strings.Contains(contentStr, "BT") || !strings.Contains(contentStr, "ET") </span><span class="cov6" title="131">{
+                <span class="cov6" title="188">contentStr := string(content)
+                if !strings.Contains(contentStr, "BT") || !strings.Contains(contentStr, "ET") </span><span class="cov6" title="133">{
                         continue</span>
                 }
 
                 // Naive parsing: Look for the specific pattern we injected
                 // "3 Tr\n["
-                <span class="cov5" title="54">if idx := strings.LastIndex(contentStr, "3 Tr"); idx != -1 </span><span class="cov2" title="6">{
+                <span class="cov5" title="55">if idx := strings.LastIndex(contentStr, "3 Tr"); idx != -1 </span><span class="cov2" title="6">{
                         // Look ahead for [
                         startBracket := strings.Index(contentStr[idx:], "[")
                         if startBracket != -1 </span><span class="cov2" title="6">{
@@ -557,12 +562,12 @@ func NewSMaskAnchor() *SMaskAnchor <span class="cov2" title="40">{
 }</span>
 
 // Name returns the anchor type name
-func (a *SMaskAnchor) Name() string <span class="cov3" title="109">{
+func (a *SMaskAnchor) Name() string <span class="cov3" title="106">{
         return "SMask"
 }</span>
 
 // Inject embeds the payload into a PDF via image SMask
-func (a *SMaskAnchor) Inject(inputPath, outputPath string, payload []byte) error <span class="cov2" title="15">{
+func (a *SMaskAnchor) Inject(inputPath, outputPath string, payload []byte) error <span class="cov2" title="14">{
         // Read and parse PDF
         ctx, err := api.ReadContextFile(inputPath)
         if err != nil </span><span class="cov0" title="0">{
@@ -570,7 +575,7 @@ func (a *SMaskAnchor) Inject(inputPath, outputPath string, payload []byte) error
         }</span>
 
         // Create SMask injector
-        <span class="cov2" title="15">injector := &amp;smaskInjector{payload: payload}
+        <span class="cov2" title="14">injector := &amp;smaskInjector{payload: payload}
 
         // Inject SMask
         if err := injector.inject(ctx); err != nil </span><span class="cov0" title="0">{
@@ -578,11 +583,11 @@ func (a *SMaskAnchor) Inject(inputPath, outputPath string, payload []byte) error
         }</span>
 
         // Write modified PDF
-        <span class="cov2" title="15">if err := api.WriteContextFile(ctx, outputPath); err != nil </span><span class="cov0" title="0">{
+        <span class="cov2" title="14">if err := api.WriteContextFile(ctx, outputPath); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("failed to write PDF: %w", err)
         }</span>
 
-        <span class="cov2" title="15">return nil</span>
+        <span class="cov2" title="14">return nil</span>
 }
 
 // Extract retrieves the payload from SMask anchor
@@ -606,12 +611,9 @@ func (a *SMaskAnchor) Extract(filePath string) ([]byte, error) <span class="cov2
 // IsAvailable checks if SMask anchor can be used
 // Requires at least one image in the PDF
 func (a *SMaskAnchor) IsAvailable(ctx *model.Context) bool <span class="cov0" title="0">{
-        images, err := findImageXObjects(ctx)
-        if err != nil </span><span class="cov0" title="0">{
-                return false
-        }</span>
-        <span class="cov0" title="0">return len(images) &gt; 0</span>
-}
+        images := findImageXObjects(ctx)
+        return len(images) &gt; 0
+}</span>
 
 // smaskInjector handles SMask injection logic
 type smaskInjector struct {
@@ -619,50 +621,47 @@ type smaskInjector struct {
 }
 
 // inject injects the payload into a PDF via image SMask
-func (s *smaskInjector) inject(ctx *model.Context) error <span class="cov2" title="15">{
+func (s *smaskInjector) inject(ctx *model.Context) error <span class="cov2" title="14">{
         // Find all image XObjects in the PDF
-        images, err := findImageXObjects(ctx)
-        if err != nil </span><span class="cov0" title="0">{
-                return fmt.Errorf("failed to find image XObjects: %w", err)
-        }</span>
+        images := findImageXObjects(ctx)
 
-        <span class="cov2" title="15">if len(images) == 0 </span><span class="cov0" title="0">{
+        if len(images) == 0 </span><span class="cov0" title="0">{
                 return fmt.Errorf("no images found in PDF (SMask anchor requires at least one image)")
         }</span>
 
         // Use the first image as anchor
-        <span class="cov2" title="15">targetImgRef := images[0]
+        <span class="cov2" title="14">targetImgRef := images[0]
         targetImg, err := getImageObject(ctx, targetImgRef)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("failed to get image object: %w", err)
         }</span>
 
         // Get image dimensions
-        <span class="cov2" title="15">width, height, err := getImageDimensions(targetImg)
+        <span class="cov2" title="14">width, height, err := getImageDimensions(&amp;targetImg)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("failed to get image dimensions: %w", err)
         }</span>
 
         // Create SMask object
-        <span class="cov2" title="15">smaskRef, err := s.createSMaskObject(ctx, width, height)
+        <span class="cov2" title="14">smaskRef, err := s.createSMaskObject(ctx, width, height)
         if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("failed to create SMask object: %w", err)
         }</span>
 
         // Update the image object in xRefTable
-        <span class="cov2" title="15">entry, found := ctx.Find(int(targetImgRef.ObjectNumber))
+        <span class="cov2" title="14">entry, found := ctx.Find(int(targetImgRef.ObjectNumber))
         if !found </span><span class="cov0" title="0">{
                 return fmt.Errorf("image object not found in xRefTable")
         }</span>
 
-        <span class="cov2" title="15">if entry.Object == nil </span><span class="cov0" title="0">{
+        <span class="cov2" title="14">if entry.Object == nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("image object is nil")
         }</span>
 
         // Handle pointer vs value type
-        <span class="cov2" title="15">if sdPtr, ok := entry.Object.(*types.StreamDict); ok </span><span class="cov0" title="0">{
+        <span class="cov2" title="14">if sdPtr, ok := entry.Object.(*types.StreamDict); ok </span><span class="cov0" title="0">{
                 sdPtr.Update("SMask", *smaskRef)
-        }</span> else<span class="cov2" title="15"> {
+        }</span> else<span class="cov2" title="14"> {
                 // entry.Object is a value, must recreate
                 actualImg, ok := entry.Object.(types.StreamDict)
                 if !ok </span><span class="cov0" title="0">{
@@ -670,11 +669,11 @@ func (s *smaskInjector) inject(ctx *model.Context) error <span class="cov2" titl
                 }</span>
 
                 // Create a new Dict with all existing entries PLUS the SMask
-                <span class="cov2" title="15">newDict := types.NewDict()
-                for k, v := range actualImg.Dict </span><span class="cov3" title="135">{
+                <span class="cov2" title="14">newDict := types.NewDict()
+                for k, v := range actualImg.Dict </span><span class="cov3" title="126">{
                         newDict[k] = v
                 }</span>
-                <span class="cov2" title="15">newDict["SMask"] = *smaskRef
+                <span class="cov2" title="14">newDict["SMask"] = *smaskRef
 
                 // Create a new StreamDict with the new Dict
                 newStreamDict := types.StreamDict{
@@ -690,26 +689,31 @@ func (s *smaskInjector) inject(ctx *model.Context) error <span class="cov2" titl
                 entry.Object = newStreamDict</span>
         }
 
-        <span class="cov2" title="15">return nil</span>
+        <span class="cov2" title="14">return nil</span>
 }
 
 // createSMaskObject creates a new SMask stream object with embedded payload
-func (s *smaskInjector) createSMaskObject(ctx *model.Context, width, height int) (*types.IndirectRef, error) <span class="cov2" title="15">{
+func (s *smaskInjector) createSMaskObject(ctx *model.Context, width, height int) (*types.IndirectRef, error) <span class="cov2" title="14">{
         // Create mask data: all 255 (fully opaque)
         maskSize := width * height
         maskData := make([]byte, maskSize)
-        for i := range maskData </span><span class="cov10" title="26195400">{
+        for i := range maskData </span><span class="cov10" title="24449040">{
                 maskData[i] = 255
         }</span>
 
+        // Prepare payload with magic header
+        <span class="cov2" title="14">magicHeaderCopy := make([]byte, len(magicHeader))
+        copy(magicHeaderCopy, magicHeader)
+        fullPayload := append(magicHeaderCopy, s.payload...)
+
         // Embed payload at the end of mask data
-        <span class="cov2" title="15">payloadOffset := len(maskData) - len(s.payload)
+        payloadOffset := len(maskData) - len(fullPayload)
         if payloadOffset &lt; 100 </span><span class="cov0" title="0">{
                 return nil, fmt.Errorf("image too small for payload (need at least %d bytes, have %d)",
-                        len(s.payload)+100, maskSize)
+                        len(fullPayload)+100, maskSize)
         }</span>
 
-        <span class="cov2" title="15">copy(maskData[payloadOffset:], s.payload)
+        <span class="cov2" title="14">copy(maskData[payloadOffset:], fullPayload)
 
         // Compress mask data with Flate (zlib)
         compressedData, err := compressFlate(maskData)
@@ -718,7 +722,7 @@ func (s *smaskInjector) createSMaskObject(ctx *model.Context, width, height int)
         }</span>
 
         // Create SMask stream dictionary
-        <span class="cov2" title="15">streamLength := int64(len(compressedData))
+        <span class="cov2" title="14">streamLength := int64(len(compressedData))
         smaskDict := types.NewStreamDict(
                 types.NewDict(),
                 0,
@@ -745,7 +749,7 @@ func (s *smaskInjector) createSMaskObject(ctx *model.Context, width, height int)
                 return nil, fmt.Errorf("failed to insert SMask object: %w", err)
         }</span>
 
-        <span class="cov2" title="15">ref := types.NewIndirectRef(objNr, 0)
+        <span class="cov2" title="14">ref := types.NewIndirectRef(objNr, 0)
         return ref, nil</span>
 }
 
@@ -755,12 +759,9 @@ type smaskExtractor struct{}
 // extract extracts payload from SMask anchor
 func (e *smaskExtractor) extract(ctx *model.Context) ([]byte, error) <span class="cov2" title="12">{
         // Find all image XObjects
-        images, err := findImageXObjects(ctx)
-        if err != nil </span><span class="cov0" title="0">{
-                return nil, err
-        }</span>
+        images := findImageXObjects(ctx)
 
-        <span class="cov2" title="12">fmt.Fprintf(os.Stderr, "[DEBUG] SMask: Found %d images\n", len(images))
+        fmt.Fprintf(os.Stderr, "[DEBUG] SMask: Found %d images\n", len(images))
 
         // Search for SMask in images
         for idx, imgRef := range images </span><span class="cov2" title="37">{
@@ -800,7 +801,7 @@ func (e *smaskExtractor) extract(ctx *model.Context) ([]byte, error) <span class
                 }
 
                 // Decode SMask stream
-                <span class="cov2" title="22">maskData, err := decodeSMask(smaskStream)
+                <span class="cov2" title="22">maskData, err := decodeSMask(&amp;smaskStream)
                 if err != nil </span><span class="cov0" title="0">{
                         fmt.Fprintf(os.Stderr, "[DEBUG] SMask: Decode failed: %v\n", err)
                         continue</span>
@@ -833,12 +834,12 @@ func (e *smaskExtractor) findPayloadInMaskData(maskData []byte) ([]byte, error) 
         scanData := maskData[scanStart:]
 
         // Find magic header
-        for i := 0; i &lt;= len(scanData)-len(magicHeader); i++ </span><span class="cov5" title="10533">{
+        for i := 0; i &lt;= len(scanData)-len(magicHeader); i++ </span><span class="cov5" title="10505">{
                 if bytes.Equal(scanData[i:i+len(magicHeader)], magicHeader) </span><span class="cov2" title="7">{
-                        payloadStart := scanStart + i
+                        payloadStart := scanStart + i + len(magicHeader) // Skip magic header
                         payload := maskData[payloadStart:]
                         fmt.Fprintf(os.Stderr, "[DEBUG] SMask: Found magic header at offset %d, payload size %d\n",
-                                payloadStart, len(payload))
+                                payloadStart-len(magicHeader), len(payload))
                         return payload, nil
                 }</span>
         }
@@ -849,50 +850,50 @@ func (e *smaskExtractor) findPayloadInMaskData(maskData []byte) ([]byte, error) 
 // PDF utility functions (shared by injector and extractor)
 
 // findImageXObjects finds all image XObjects in the PDF
-func findImageXObjects(ctx *model.Context) ([]types.IndirectRef, error) <span class="cov2" title="27">{
+func findImageXObjects(ctx *model.Context) []types.IndirectRef <span class="cov2" title="26">{
         var images []types.IndirectRef
 
-        for objNr := 1; objNr &lt;= *ctx.XRefTable.Size; objNr++ </span><span class="cov5" title="2101">{
+        for objNr := 1; objNr &lt;= *ctx.XRefTable.Size; objNr++ </span><span class="cov5" title="2043">{
                 entry, found := ctx.Find(objNr)
-                if !found || entry.Free || entry.Compressed </span><span class="cov3" title="144">{
+                if !found || entry.Free || entry.Compressed </span><span class="cov3" title="142">{
                         continue</span>
                 }
 
-                <span class="cov4" title="1957">obj, err := ctx.Dereference(types.IndirectRef{ObjectNumber: types.Integer(objNr), GenerationNumber: types.Integer(0)})
+                <span class="cov4" title="1901">obj, err := ctx.Dereference(types.IndirectRef{ObjectNumber: types.Integer(objNr), GenerationNumber: types.Integer(0)})
                 if err != nil </span><span class="cov0" title="0">{
                         continue</span>
                 }
 
-                <span class="cov4" title="1957">if streamDict, ok := obj.(types.StreamDict); ok </span><span class="cov4" title="840">{
-                        if streamDict.Type() != nil &amp;&amp; *streamDict.Type() == "XObject" </span><span class="cov3" title="165">{
+                <span class="cov4" title="1901">if streamDict, ok := obj.(types.StreamDict); ok </span><span class="cov4" title="819">{
+                        if streamDict.Type() != nil &amp;&amp; *streamDict.Type() == "XObject" </span><span class="cov3" title="159">{
                                 subtype := streamDict.NameEntry("Subtype")
-                                if subtype != nil &amp;&amp; *subtype == "Image" </span><span class="cov3" title="162">{
+                                if subtype != nil &amp;&amp; *subtype == "Image" </span><span class="cov3" title="156">{
                                         images = append(images, types.IndirectRef{ObjectNumber: types.Integer(objNr), GenerationNumber: types.Integer(0)})
                                 }</span>
                         }
                 }
         }
 
-        <span class="cov2" title="27">return images, nil</span>
+        <span class="cov2" title="26">return images</span>
 }
 
 // getImageObject retrieves the image stream dictionary
-func getImageObject(ctx *model.Context, ref types.IndirectRef) (types.StreamDict, error) <span class="cov2" title="15">{
+func getImageObject(ctx *model.Context, ref types.IndirectRef) (types.StreamDict, error) <span class="cov2" title="14">{
         obj, err := ctx.Dereference(ref)
         if err != nil </span><span class="cov0" title="0">{
                 return types.StreamDict{}, err
         }</span>
 
-        <span class="cov2" title="15">streamDict, ok := obj.(types.StreamDict)
+        <span class="cov2" title="14">streamDict, ok := obj.(types.StreamDict)
         if !ok </span><span class="cov0" title="0">{
                 return types.StreamDict{}, fmt.Errorf("object is not a stream dictionary")
         }</span>
 
-        <span class="cov2" title="15">return streamDict, nil</span>
+        <span class="cov2" title="14">return streamDict, nil</span>
 }
 
 // getImageDimensions extracts width and height from image dictionary
-func getImageDimensions(img types.StreamDict) (int, int, error) <span class="cov2" title="15">{
+func getImageDimensions(img *types.StreamDict) (width, height int, err error) <span class="cov2" title="14">{
         widthObj := img.IntEntry("Width")
         heightObj := img.IntEntry("Height")
 
@@ -900,11 +901,11 @@ func getImageDimensions(img types.StreamDict) (int, int, error) <span class="cov
                 return 0, 0, fmt.Errorf("image dimensions not found")
         }</span>
 
-        <span class="cov2" title="15">return *widthObj, *heightObj, nil</span>
+        <span class="cov2" title="14">return *widthObj, *heightObj, nil</span>
 }
 
 // compressFlate compresses data using zlib (Flate)
-func compressFlate(data []byte) ([]byte, error) <span class="cov2" title="15">{
+func compressFlate(data []byte) ([]byte, error) <span class="cov2" title="14">{
         var buf bytes.Buffer
         w := zlib.NewWriter(&amp;buf)
 
@@ -912,15 +913,15 @@ func compressFlate(data []byte) ([]byte, error) <span class="cov2" title="15">{
                 return nil, err
         }</span>
 
-        <span class="cov2" title="15">if err := w.Close(); err != nil </span><span class="cov0" title="0">{
+        <span class="cov2" title="14">if err := w.Close(); err != nil </span><span class="cov0" title="0">{
                 return nil, err
         }</span>
 
-        <span class="cov2" title="15">return buf.Bytes(), nil</span>
+        <span class="cov2" title="14">return buf.Bytes(), nil</span>
 }
 
 // decodeSMask decodes SMask stream data (internal helper)
-func decodeSMask(stream types.StreamDict) ([]byte, error) <span class="cov2" title="22">{
+func decodeSMask(stream *types.StreamDict) ([]byte, error) <span class="cov2" title="22">{
         rawData := stream.Raw
 
         // Check if compressed with Flate
@@ -950,10 +951,23 @@ func decodeSMask(stream types.StreamDict) ([]byte, error) <span class="cov2" tit
 
 import (
         "fmt"
+        "os"
+        "sync"
 
         "github.com/pdfcpu/pdfcpu/pkg/api"
         "github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
         "github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
+)
+
+const (
+        // AnchorNameVisual is the name of the visual watermark anchor
+        AnchorNameVisual = "Visual"
+)
+
+var (
+        // fontInstalled tracks whether we've attempted to install a Unicode font
+        fontInstalled bool
+        fontMutex     sync.Mutex
 )
 
 // VisualAnchor implements the Phase 9 strategy: Visual Watermarks
@@ -961,12 +975,12 @@ import (
 type VisualAnchor struct {
 }
 
-func NewVisualAnchor() *VisualAnchor <span class="cov9" title="38">{
+func NewVisualAnchor() *VisualAnchor <span class="cov10" title="38">{
         return &amp;VisualAnchor{}
 }</span>
 
-func (a *VisualAnchor) Name() string <span class="cov10" title="39">{
-        return "Visual"
+func (a *VisualAnchor) Name() string <span class="cov9" title="35">{
+        return AnchorNameVisual
 }</span>
 
 // IsAvailable checks if the PDF has pages
@@ -975,28 +989,59 @@ func (a *VisualAnchor) IsAvailable(ctx *model.Context) bool <span class="cov0" t
 }</span>
 
 // Inject adds a visible watermark to the PDF
-func (a *VisualAnchor) Inject(inputPath, outputPath string, payload []byte) error <span class="cov6" title="8">{
+// Supports full Unicode character range including CJK, Arabic, Cyrillic, etc.
+func (a *VisualAnchor) Inject(inputPath, outputPath string, payload []byte) error <span class="cov5" title="7">{
         // Use plaintext payload as watermark content (deterrence, no encryption)
         message := string(payload)
 
         // Create a watermark configuration
         // Display "CONFIDENTIAL" and the plaintext message
-        watermarkText := fmt.Sprintf("CONFIDENTIAL\n%s", message)
+        // Use vertical bar separator for better compatibility
+        watermarkText := fmt.Sprintf("CONFIDENTIAL | %s", message)
 
-        // Configure watermark
-        // Rotation: 45 degrees, Opacity: 0.3, Font: Helvetica, Size: 48, Color: Gray
-        wmConf, err := api.TextWatermark(watermarkText, "rot:45, op:0.3, font:Helvetica, points:48, col:0.5 0.5 0.5", true, false, types.POINTS)
+        // Detect if message contains non-ASCII characters (Unicode)
+        // Removed: always use embedded Unicode font
+
+        // Configure watermark using embedded pan-Unicode font (always)
+        var wmConf *model.Watermark
+        var err error
+
+        // Install embedded font once
+        fontMutex.Lock()
+        if !fontInstalled </span><span class="cov1" title="1">{
+                if fontErr := InstallEmbeddedUnicodeFont(); fontErr != nil </span><span class="cov0" title="0">{
+                        fmt.Fprintf(os.Stderr, "[WARN] Failed to install embedded Unicode font: %v\n", fontErr)
+                }</span>
+                <span class="cov1" title="1">fontInstalled = true</span>
+        }
+        <span class="cov5" title="7">fontMutex.Unlock()
+
+        // Always use embedded Go Noto font
+        // IMPORTANT: Font name "GoNotoCurrent-Regular-Regular" comes from pdfcpu's font registration.
+        // The double "Regular" is NOT a typo - it's generated from:
+        //   - TTF Internal Font Family: "GoNotoCurrent-Regular"
+        //   - TTF Internal Style Name: "Regular"
+        //   - pdfcpu combines them as: "{Family}-{Style}" = "GoNotoCurrent-Regular-Regular"
+        // This name must match the .gob file in ~/Library/Application Support/pdfcpu/fonts/
+        // DO NOT change this name unless you replace the embedded font file.
+        wmConf, err = api.TextWatermark(watermarkText,
+                "font:GoNotoCurrent-Regular-Regular, points:48, rot:45, op:0.3, col:0.5 0.5 0.5",
+                true, false, types.POINTS)
         if err != nil </span><span class="cov0" title="0">{
+                fmt.Fprintf(os.Stderr, "[WARN] Embedded Unicode font unavailable, fallback to Helvetica: %v\n", err)
+                wmConf, err = api.TextWatermark(watermarkText, "font:Helvetica, points:48, rot:45, op:0.3, col:0.5 0.5 0.5", true, false, types.POINTS)
+        }</span>
+        <span class="cov5" title="7">if err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("failed to configure watermark: %w", err)
         }</span>
 
         // Apply watermark to all pages
         // We use api.AddWatermarksFile which handles reading and writing
-        <span class="cov6" title="8">if err := api.AddWatermarksFile(inputPath, outputPath, nil, wmConf, nil); err != nil </span><span class="cov0" title="0">{
+        <span class="cov5" title="7">if err := api.AddWatermarksFile(inputPath, outputPath, nil, wmConf, nil); err != nil </span><span class="cov0" title="0">{
                 return fmt.Errorf("failed to add watermark: %w", err)
         }</span>
 
-        <span class="cov6" title="8">return nil</span>
+        <span class="cov5" title="7">return nil</span>
 }
 
 // Extract for VisualAnchor is a no-op or requires OCR (which we don't do).
@@ -1104,6 +1149,49 @@ func (c *CryptoManager) Decrypt(payload []byte) (string, error) <span class="cov
 		<pre class="file" id="file6" style="display: none">package injector
 
 import (
+        _ "embed"
+        "os"
+        "path/filepath"
+
+        "github.com/pdfcpu/pdfcpu/pkg/api"
+)
+
+//go:embed assets/GoNotoCurrent-Regular.ttf
+var goNotoCurrentTTF []byte
+
+// InstallEmbeddedUnicodeFont installs the embedded pan-Unicode font into pdfcpu's user font registry.
+// It writes the embedded TTF to a temporary location and calls api.InstallFonts.
+//
+// IMPORTANT NOTES:
+//  1. The font file "GoNotoCurrent-Regular.ttf" is from Go Noto Universal project (v7.0)
+//     Source: https://github.com/satbyy/go-noto-universal
+//  2. After installation, pdfcpu registers the font with name: "GoNotoCurrent-Regular-Regular"
+//     (The double "Regular" comes from TTF internal metadata, see anchor_visual.go for details)
+//  3. This font supports the entire Unicode BMP + supplementary planes, covering:
+//     - CJK (Chinese, Japanese, Korean)
+//     - Arabic, Cyrillic, Hebrew, Thai, etc.
+//     - Emoji and symbols
+//  4. Font size: ~14MB embedded in binary
+//  5. Installation happens once per program run (protected by fontMutex in anchor_visual.go)
+func InstallEmbeddedUnicodeFont() error <span class="cov8" title="1">{
+        tmpDir, err := os.MkdirTemp("", "phantom-unicode-font")
+        if err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">defer os.RemoveAll(tmpDir)
+
+        ttfPath := filepath.Join(tmpDir, "GoNotoCurrent-Regular.ttf")
+        // gosec: G306 - Temporary font file with 0600 permissions for security
+        if err := os.WriteFile(ttfPath, goNotoCurrentTTF, 0600); err != nil </span><span class="cov0" title="0">{
+                return err
+        }</span>
+        <span class="cov8" title="1">return api.InstallFonts([]string{ttfPath})</span>
+}
+</pre>
+		
+		<pre class="file" id="file7" style="display: none">package injector
+
+import (
         "errors"
         "fmt"
         "os"
@@ -1169,7 +1257,7 @@ func generateOutputPath(inputPath, suffix string) (string, error) <span class="c
 }
 </pre>
 		
-		<pre class="file" id="file7" style="display: none">package injector
+		<pre class="file" id="file8" style="display: none">package injector
 
 import (
         "errors"
@@ -1241,12 +1329,12 @@ func Sign(filePath, message, key string, selectedAnchors []string) error <span c
 
         // Filter anchors based on selection
         var anchorsToUse []Anchor
-        if len(selectedAnchors) == 0 </span><span class="cov5" title="7">{
+        if len(selectedAnchors) == 0 </span><span class="cov4" title="6">{
                 anchorsToUse = allAnchors
-        }</span> else<span class="cov6" title="13"> {
-                for _, name := range selectedAnchors </span><span class="cov8" title="25">{
-                        for _, a := range allAnchors </span><span class="cov10" title="53">{
-                                if a.Name() == name </span><span class="cov8" title="25">{
+        }</span> else<span class="cov6" title="14"> {
+                for _, name := range selectedAnchors </span><span class="cov8" title="27">{
+                        for _, a := range allAnchors </span><span class="cov10" title="57">{
+                                if a.Name() == name </span><span class="cov8" title="27">{
                                         anchorsToUse = append(anchorsToUse, a)
                                         break</span>
                                 }
@@ -1268,27 +1356,27 @@ func Sign(filePath, message, key string, selectedAnchors []string) error <span c
         // Final Step: -&gt; FinalOutput
 
         // Helper to determine output for current step
-        getOutput := func(step, total int) string </span><span class="cov10" title="53">{
+        getOutput := func(step, total int) string </span><span class="cov9" title="51">{
                 if step == total-1 </span><span class="cov7" title="20">{
                         return finalOutputPath
                 }</span>
-                <span class="cov8" title="33">if step%2 == 0 </span><span class="cov8" title="22">{
+                <span class="cov8" title="31">if step%2 == 0 </span><span class="cov7" title="21">{
                         return tempOutputPath1
                 }</span>
-                <span class="cov6" title="11">return tempOutputPath2</span>
+                <span class="cov6" title="10">return tempOutputPath2</span>
         }
 
-        <span class="cov7" title="20">for i, anchor := range anchorsToUse </span><span class="cov10" title="53">{
+        <span class="cov7" title="20">for i, anchor := range anchorsToUse </span><span class="cov9" title="51">{
                 output := getOutput(i, len(anchorsToUse))
 
                 fmt.Printf("[*] Injecting Anchor %d/%d: %s...\n", i+1, len(anchorsToUse), anchor.Name())
 
                 // Visual anchor displays plaintext; others use encrypted payload
                 injectPayload := payload
-                if anchor.Name() == "Visual" </span><span class="cov5" title="8">{
+                if anchor.Name() == "Visual" </span><span class="cov5" title="7">{
                         injectPayload = []byte(message)
                 }</span>
-                <span class="cov10" title="53">if err := anchor.Inject(currentInput, output, injectPayload); err != nil </span><span class="cov0" title="0">{
+                <span class="cov9" title="51">if err := anchor.Inject(currentInput, output, injectPayload); err != nil </span><span class="cov0" title="0">{
                         fmt.Fprintf(os.Stderr, "⚠ Warning: %s injection failed: %v\n", anchor.Name(), err)
                         // If injection failed, we need to ensure the chain continues.
                         // If this is the first step, we haven't created any temp file yet.
@@ -1314,10 +1402,10 @@ func Sign(filePath, message, key string, selectedAnchors []string) error <span c
                 }
 
                 // Injection successful
-                <span class="cov10" title="53">if currentInput != filePath </span><span class="cov8" title="33">{
+                <span class="cov9" title="51">if currentInput != filePath </span><span class="cov8" title="31">{
                         os.Remove(currentInput) // Remove previous temp
                 }</span>
-                <span class="cov10" title="53">currentInput = output
+                <span class="cov9" title="51">currentInput = output
                 anchorCount++
                 anchorNames = append(anchorNames, anchor.Name())
                 fmt.Printf("✓ Anchor %s embedded\n", anchor.Name())</span>
@@ -1333,7 +1421,7 @@ func Sign(filePath, message, key string, selectedAnchors []string) error <span c
 
         // Report signature mode
         <span class="cov7" title="20">fmt.Printf("✓ Signature mode: %d-anchor strategy\n", anchorCount)
-        for i, name := range anchorNames </span><span class="cov10" title="53">{
+        for i, name := range anchorNames </span><span class="cov9" title="51">{
                 fmt.Printf("  - Anchor %d: %s\n", i+1, name)
         }</span>
 
@@ -1344,10 +1432,10 @@ func Sign(filePath, message, key string, selectedAnchors []string) error <span c
 // Verify extracts and decrypts the hidden message from a signed PDF file.
 // selectedAnchors: list of anchor names to verify. If empty, verifies all.
 // Returns the extracted message and the name of the anchor that succeeded.
-func Verify(filePath, key string, selectedAnchors []string) (string, string, error) <span class="cov7" title="19">{
+func Verify(filePath, key string, selectedAnchors []string) (message, anchorName string, err error) <span class="cov7" title="19">{
         // Validate inputs
-        if err := validateVerifyInputs(filePath, key); err != nil </span><span class="cov1" title="1">{
-                return "", "", fmt.Errorf("validation failed: %w", err)
+        if validationErr := validateVerifyInputs(filePath, key); validationErr != nil </span><span class="cov1" title="1">{
+                return "", "", fmt.Errorf("validation failed: %w", validationErr)
         }</span>
 
         // Create crypto manager
@@ -1446,7 +1534,7 @@ func ExtractSMaskPayloadFromPDF(filePath string) ([]byte, error) <span class="co
 }</span>
 </pre>
 		
-		<pre class="file" id="file8" style="display: none">package main
+		<pre class="file" id="file9" style="display: none">package main
 
 import (
         "bufio"
@@ -1711,7 +1799,7 @@ func interactiveVerify(scanner *bufio.Scanner) <span class="cov0" title="0">{
                 // Filter out Visual (no extraction)
                 filtered := make([]injector.Anchor, 0, len(anchorsToUse))
                 for _, a := range anchorsToUse </span><span class="cov0" title="0">{
-                        if a.Name() != "Visual" </span><span class="cov0" title="0">{
+                        if a.Name() != injector.AnchorNameVisual </span><span class="cov0" title="0">{
                                 filtered = append(filtered, a)
                         }</span>
                 }
@@ -1782,7 +1870,7 @@ func interactiveLookup(scanner *bufio.Scanner) <span class="cov0" title="0">{
         anchors := registry.GetAvailableAnchors()
         success := false
         for _, a := range anchors </span><span class="cov0" title="0">{
-                if a.Name() == "Visual" </span><span class="cov0" title="0">{
+                if a.Name() == injector.AnchorNameVisual </span><span class="cov0" title="0">{
                         continue</span>
                 }
                 <span class="cov0" title="0">fmt.Printf("Trying: %s ... ", a.Name())
@@ -1821,7 +1909,7 @@ func clearScreen() <span class="cov0" title="0">{
 }</span>
 </pre>
 		
-		<pre class="file" id="file9" style="display: none">package main
+		<pre class="file" id="file10" style="display: none">package main
 
 import (
         "fmt"
@@ -1926,7 +2014,7 @@ Note: The decryption key must match the one used during signing.`,
                 fmt.Printf("   File: %s\n", filePath)
                 fmt.Println()
 
-                if strings.ToLower(verifyMode) == "all" </span><span class="cov0" title="0">{
+                if strings.EqualFold(verifyMode, "all") </span><span class="cov0" title="0">{
                         crypto, err := injector.NewCryptoManager([]byte(key))
                         if err != nil </span><span class="cov0" title="0">{
                                 return fmt.Errorf("failed to create crypto manager: %w", err)
@@ -1935,7 +2023,7 @@ Note: The decryption key must match the one used during signing.`,
                         anchors := registry.GetAvailableAnchors()
                         anySuccess := false
                         for _, a := range anchors </span><span class="cov0" title="0">{
-                                if a.Name() == "Visual" </span><span class="cov0" title="0">{ // Visual 不支持提取
+                                if a.Name() == injector.AnchorNameVisual </span><span class="cov0" title="0">{ // Visual 不支持提取
                                         continue</span>
                                 }
                                 <span class="cov0" title="0">fmt.Printf(" - Trying %s... ", a.Name())
@@ -1971,7 +2059,8 @@ Note: The decryption key must match the one used during signing.`,
         },
 }
 
-func init() <span class="cov0" title="0">{
+// setupCommands initializes command line flags
+func setupCommands() <span class="cov0" title="0">{
         rootCmd.AddCommand(signCmd)
         rootCmd.AddCommand(verifyCmd)
 
@@ -1996,6 +2085,7 @@ func Execute() error <span class="cov0" title="0">{
 }</span>
 
 func main() <span class="cov0" title="0">{
+        setupCommands()
         if err := Execute(); err != nil </span><span class="cov0" title="0">{
                 fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n", err)
                 os.Exit(1)

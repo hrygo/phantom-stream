@@ -103,7 +103,7 @@ Note: The decryption key must match the one used during signing.`,
 		fmt.Printf("   File: %s\n", filePath)
 		fmt.Println()
 
-		if strings.ToLower(verifyMode) == "all" {
+		if strings.EqualFold(verifyMode, "all") {
 			crypto, err := injector.NewCryptoManager([]byte(key))
 			if err != nil {
 				return fmt.Errorf("failed to create crypto manager: %w", err)
@@ -112,7 +112,7 @@ Note: The decryption key must match the one used during signing.`,
 			anchors := registry.GetAvailableAnchors()
 			anySuccess := false
 			for _, a := range anchors {
-				if a.Name() == "Visual" { // Visual 不支持提取
+				if a.Name() == injector.AnchorNameVisual { // Visual 不支持提取
 					continue
 				}
 				fmt.Printf(" - Trying %s... ", a.Name())
@@ -148,7 +148,8 @@ Note: The decryption key must match the one used during signing.`,
 	},
 }
 
-func init() {
+// setupCommands initializes command line flags
+func setupCommands() {
 	rootCmd.AddCommand(signCmd)
 	rootCmd.AddCommand(verifyCmd)
 
@@ -173,6 +174,7 @@ func Execute() error {
 }
 
 func main() {
+	setupCommands()
 	if err := Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n", err)
 		os.Exit(1)

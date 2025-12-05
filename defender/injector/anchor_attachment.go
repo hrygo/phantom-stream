@@ -65,8 +65,8 @@ func (a *AttachmentAnchor) Extract(filePath string) ([]byte, error) {
 	conf := model.NewDefaultConfiguration()
 
 	// Extract attachment from PDF
-	if err := api.ExtractAttachmentsFile(filePath, tmpDir, []string{attachName}, conf); err != nil {
-		return nil, fmt.Errorf("%w: %v", ErrAttachmentNotFound, err)
+	if extractErr := api.ExtractAttachmentsFile(filePath, tmpDir, []string{attachName}, conf); extractErr != nil {
+		return nil, fmt.Errorf("%w: %v", ErrAttachmentNotFound, extractErr)
 	}
 
 	extractedPath := filepath.Join(tmpDir, attachName)

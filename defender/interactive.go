@@ -263,7 +263,7 @@ func interactiveVerify(scanner *bufio.Scanner) {
 		// Filter out Visual (no extraction)
 		filtered := make([]injector.Anchor, 0, len(anchorsToUse))
 		for _, a := range anchorsToUse {
-			if a.Name() != "Visual" {
+			if a.Name() != injector.AnchorNameVisual {
 				filtered = append(filtered, a)
 			}
 		}
@@ -334,7 +334,7 @@ func interactiveLookup(scanner *bufio.Scanner) {
 	anchors := registry.GetAvailableAnchors()
 	success := false
 	for _, a := range anchors {
-		if a.Name() == "Visual" {
+		if a.Name() == injector.AnchorNameVisual {
 			continue
 		}
 		fmt.Printf("Trying: %s ... ", a.Name())

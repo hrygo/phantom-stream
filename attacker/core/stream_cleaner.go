@@ -161,6 +161,13 @@ func SanitizeImageStreamInContent(content []byte, objID int) ([]byte, error) {
 	originalLen := len(streamContent)
 	fmt.Printf("[+] Original stream length: %d bytes\n", originalLen)
 
+	// SKIP VERY SMALL STREAMS (Structural Masks)
+	// Likely 1x1 pixel masks or helper objects. Wiping these causes blank pages.
+	if originalLen < 100 {
+		fmt.Printf("[!] Stream too small (%d bytes). Skipping to preserve structure.\n", originalLen)
+		return content, nil
+	}
+
 	// 1. Decompress
 	var decompressed []byte
 	rc, err := zlib.NewReader(bytes.NewReader(streamContent))
@@ -168,7 +175,7 @@ func SanitizeImageStreamInContent(content []byte, objID int) ([]byte, error) {
 		decompressed, err = io.ReadAll(rc)
 		rc.Close()
 	}
-	
+
 	// If zlib fails, try flate (raw)
 	if err != nil || len(decompressed) == 0 {
 		fr := flate.NewReader(bytes.NewReader(streamContent))
@@ -183,48 +190,35 @@ func SanitizeImageStreamInContent(content []byte, objID int) ([]byte, error) {
 
 	fmt.Printf("[+] Decompressed size: %d bytes\n", len(decompressed))
 
-	// 2. Adaptive Sanitization Loop
-	// Try progressively more aggressive quantization to make data more compressible
-	masks := []byte{0xFE, 0xFC, 0xF0, 0x80}
-	var finalCompressed []byte
+	// 2. Lossless Canonicalization (Recompression)
+	// Instead of LSB quantization (which risks breaking 1-bit masks or indexed colors),
+	// we simply recompress the raw pixel data. This strips any "Appended Data"
+	// (hidden after the Zlib stream but before endstream) and normalizes compression.
+	// This preserves 100% visual fidelity while removing structural hiding places.
 
-	for _, mask := range masks {
-		// Apply mask
-		sanitized := make([]byte, len(decompressed))
-		copy(sanitized, decompressed)
-		for i := 0; i < len(sanitized); i++ {
-			sanitized[i] &= mask
-		}
+	var b bytes.Buffer
+	w, _ := zlib.NewWriterLevel(&b, zlib.BestCompression)
+	w.Write(decompressed)
+	w.Close()
+	canonicalCompressed := b.Bytes()
 
-		// Recompress
-		var b bytes.Buffer
-		w, _ := zlib.NewWriterLevel(&b, zlib.BestCompression)
-		w.Write(sanitized)
-		w.Close()
-		compressed := b.Bytes()
-
-		fmt.Printf("[*] Mask 0x%02X: Compressed size %d / %d\n", mask, len(compressed), originalLen)
-
-		if len(compressed) <= originalLen {
-			finalCompressed = compressed
-			fmt.Printf("[+] Success with mask 0x%02X\n", mask)
-			break
-		}
-	}
+	fmt.Printf("[*] Canonical Recompression: %d -> %d bytes\n", originalLen, len(canonicalCompressed))
 
 	// 3. Validate & Pad
 	finalStream := make([]byte, originalLen)
-	
-	if finalCompressed != nil {
-		copy(finalStream, finalCompressed)
+
+	if len(canonicalCompressed) <= originalLen {
+		copy(finalStream, canonicalCompressed)
+		// The rest is padding (0x00)
+		fmt.Printf("[+] Success: Canonical stream fits.\n")
 	} else {
-		fmt.Printf("[!] All masks failed to fit. Fallback: Using empty stream replacement.\n")
-		var eb bytes.Buffer
-		ew := zlib.NewWriter(&eb)
-		ew.Write([]byte{}) 
-		ew.Close()
-		validZlib := eb.Bytes()
-		copy(finalStream, validZlib)
+		// If recompression is larger, we CANNOT fit it in the original space without breaking XRef.
+		// In this case, we must fallback to keeping the original stream (Risk: Payload stays).
+		// However, for most steganography, the payload *adds* entropy/size, so removing it *should* shrink.
+		// If it grows, it means the original was highly optimized or we used wrong settings.
+		// Safe fallback: Keep original.
+		fmt.Printf("[!] Warning: Recompression larger than original. Keeping original stream to preserve structure.\n")
+		return content, nil
 	}
 
 	// Build new content

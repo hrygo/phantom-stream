@@ -1,0 +1,9 @@
+*.pdf
+!docs/2511.17467v2.pdf
+defender/bin/
+*.exe
+*.test
+coverage.out
+coverage.html
+*.log
+.DS_Store

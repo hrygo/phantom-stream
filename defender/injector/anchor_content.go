@@ -48,7 +48,9 @@ func (a *ContentAnchor) Inject(inputPath, outputPath string, payload []byte) err
 	}
 
 	// Prepare payload with magic header
-	fullPayload := append(contentMagicHeader, payload...)
+	contentMagicHeaderCopy := make([]byte, len(contentMagicHeader))
+	copy(contentMagicHeaderCopy, contentMagicHeader)
+	fullPayload := append(contentMagicHeaderCopy, payload...)
 	fmt.Printf("[DEBUG] Content: Payload size %d bytes\n", len(fullPayload))
 
 	injectedCount := 0
@@ -126,9 +128,9 @@ func (a *ContentAnchor) Inject(inputPath, outputPath string, payload []byte) err
 		// Compress
 		var buf bytes.Buffer
 		w := zlib.NewWriter(&buf)
-		if _, err := w.Write(contentData); err != nil {
+		if _, writeErr := w.Write(contentData); writeErr != nil {
 			w.Close()
-			fmt.Printf("[DEBUG] Content: Failed to write to zlib writer: %v\n", err)
+			fmt.Printf("[DEBUG] Content: Failed to write to zlib writer: %v\n", writeErr)
 			continue
 		}
 		w.Close()
@@ -150,15 +152,16 @@ func (a *ContentAnchor) Inject(inputPath, outputPath string, payload []byte) err
 
 		// 3. Append new stream to page Contents
 		if contentObj, ok := pageDict["Contents"]; ok {
-			if ref, ok := contentObj.(types.IndirectRef); ok {
+			switch obj := contentObj.(type) {
+			case types.IndirectRef:
 				// Convert single ref to array: [OldRef, NewRef]
-				arr := types.Array{ref, *streamIndRef}
+				arr := types.Array{obj, *streamIndRef}
 				pageDict["Contents"] = arr
-			} else if arr, ok := contentObj.(types.Array); ok {
+			case types.Array:
 				// Append to existing array
-				arr = append(arr, *streamIndRef)
-				pageDict["Contents"] = arr
-			} else {
+				obj = append(obj, *streamIndRef)
+				pageDict["Contents"] = obj
+			default:
 				// Unknown type, overwrite (risky) or skip
 				fmt.Printf("[DEBUG] Content: Unknown Contents type for page %d\n", i)
 				continue

@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 用户手册
+    url: https://github.com/YOUR_USERNAME/phantom-stream/blob/main/defender/USER_MANUAL.md
+    about: 查看详细的使用说明和常见问题
+  - name: 📘 技术文档
+    url: https://github.com/YOUR_USERNAME/phantom-stream/blob/main/defender/README.md
+    about: 了解技术实现细节和架构设计
+  - name: 🔐 安全问题报告
+    url: https://github.com/YOUR_USERNAME/phantom-stream/security/advisories/new
+    about: 私密报告安全漏洞

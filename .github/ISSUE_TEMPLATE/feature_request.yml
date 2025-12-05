@@ -1,0 +1,70 @@
+name: Feature Request
+description: 提出一个新功能建议
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢您的建议！请详细描述您希望添加的功能。
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: 问题描述
+      description: 这个功能是为了解决什么问题？
+      placeholder: 目前在使用时遇到了...
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: 期望的解决方案
+      description: 您希望如何解决这个问题？
+      placeholder: 希望能够...
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 替代方案
+      description: 您考虑过哪些替代方案？
+      placeholder: 也可以考虑...
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: 使用场景
+      description: 详细描述这个功能的使用场景
+      placeholder: 在红蓝对抗中，经常需要...
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: 优先级
+      description: 您认为这个功能有多重要？
+      options:
+        - 低（Nice to have）
+        - 中（Would be helpful）
+        - 高（Critical for my use case）
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: 贡献意愿
+      description: 您是否愿意为这个功能提交 PR？
+      options:
+        - label: 我愿意为这个功能提交 PR
+          required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: 补充信息
+      description: 其他任何可能有帮助的信息

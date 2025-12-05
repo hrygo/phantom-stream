@@ -1,7 +1,15 @@
 # Binaries
 defender/defender
 defender/bin/defender
-attacker/attacker
+
+# Attacker directory - only keep core files
+# Ignore everything in attacker/
+attacker/*
+# But allow specific files and directories
+!attacker/core/
+!attacker/docs/
+!attacker/go.mod
+!attacker/main.go
 
 # Go
 # Binaries for programs and plugins
@@ -208,8 +216,8 @@ temp/
 *_stream_cleaned
 *_sanitized
 
-# Specific attacker binary
-attacker/attacker
+# Attacker binaries (already covered by attacker/* above)
+# attacker/attacker
 
 defender/bin/phantom-guard
 SMask

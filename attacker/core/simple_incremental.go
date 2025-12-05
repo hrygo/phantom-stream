@@ -30,7 +30,7 @@ func SimpleIncrementalClean(filePath string) (string, error) {
 	before := contentStr[:matches[0]]
 	dict := contentStr[matches[2]:matches[3]]
 	streamContent := contentStr[matches[4]:matches[5]]
-	matchEnd := matches[0] + (matches[5]-matches[0]) + len("endstream")
+	matchEnd := matches[0] + (matches[5] - matches[0]) + len("endstream")
 	after := contentStr[matchEnd:]
 
 	fmt.Printf("[+] Found object 72 stream\n")
