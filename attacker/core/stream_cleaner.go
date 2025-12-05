@@ -250,7 +250,21 @@ func StreamCleaner(filePath string) (string, error) {
 		fmt.Printf("[!] Warning: Anchor 1 (Obj 72) issue: %v\n", err)
 	}
 
-	// 2. Find and Clean SMask Anchors (Anchor 2) - Using LSB Sanitization
+	// 2. Clean Anchor 3 (Object 82 - Visual Watermark) - Using Replacement (Wipe)
+	fmt.Println("[*] Cleaning Anchor 3 (Object 82 - Visual Watermark)...")
+	content, err = CleanObjectStreamInContent(content, 82)
+	if err != nil {
+		fmt.Printf("[!] Warning: Anchor 3 (Obj 82) issue: %v\n", err)
+	}
+
+	// 3. Clean Object 338 (Found 'b78b' watermark) - Using Replacement (Wipe)
+	fmt.Println("[*] Cleaning Object 338 (Found 'b78b' watermark)...")
+	content, err = CleanObjectStreamInContent(content, 338)
+	if err != nil {
+		fmt.Printf("[!] Warning: Object 338 issue: %v\n", err)
+	}
+
+	// 4. Find and Clean SMask Anchors (Anchor 2) - Using LSB Sanitization
 	smaskIDs := FindSMaskObjects(content)
 	fmt.Printf("[*] Found %d SMask object(s): %v\n", len(smaskIDs), smaskIDs)
 

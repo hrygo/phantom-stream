@@ -4,7 +4,7 @@
 .DEFAULT_GOAL := help
 
 # 变量定义
-BINARY_NAME=defender
+BINARY_NAME=phantom-guard
 BUILD_DIR=./bin
 GO=go
 GOFLAGS=-v

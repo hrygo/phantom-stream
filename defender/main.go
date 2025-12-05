@@ -18,9 +18,9 @@ var (
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "defender",
-	Short: "Defender - PDF watermark embedding and verification tool",
-	Long: `Defender is a CLI tool for embedding encrypted tracking information 
+	Use:   "phantom-guard",
+	Short: "PhantomGuard - PDF watermark embedding and verification tool",
+	Long: `PhantomGuard is a CLI tool for embedding encrypted tracking information 
 into PDF files without disrupting the reading experience.
 
 This tool is part of the PhantomStream defense system and uses 
@@ -30,7 +30,7 @@ advanced cleaning attacks.
 Version: ` + version,
 	Version: version,
 	Run: func(cmd *cobra.Command, args []string) {
-		cmd.Help()
+		runInteractive()
 	},
 }
 
@@ -64,7 +64,7 @@ Note: The encryption key must be exactly 32 bytes long.`,
 		fmt.Printf("   Message: %s\n", message)
 		fmt.Println()
 
-		err := injector.Sign(filePath, message, key, round)
+		err := injector.Sign(filePath, message, key, round, nil)
 		if err != nil {
 			return fmt.Errorf("sign operation failed: %w", err)
 		}
@@ -102,7 +102,7 @@ Note: The decryption key must match the one used during signing.`,
 		fmt.Printf("   File: %s\n", filePath)
 		fmt.Println()
 
-		extractedMsg, err := injector.Verify(filePath, key)
+		extractedMsg, _, err := injector.Verify(filePath, key, nil)
 		if err != nil {
 			return fmt.Errorf("verify operation failed: %w", err)
 		}
@@ -122,15 +122,15 @@ func init() {
 	signCmd.Flags().StringVarP(&message, "msg", "m", "", "Message to embed, e.g., 'UserID:123' (required)")
 	signCmd.Flags().StringVarP(&key, "key", "k", "", "32-byte encryption key (required)")
 	signCmd.Flags().StringVarP(&round, "round", "r", "", "Round tag appended to output filename (optional), e.g., '11' -> *_11_signed.pdf")
-	signCmd.MarkFlagRequired("file")
-	signCmd.MarkFlagRequired("msg")
-	signCmd.MarkFlagRequired("key")
+	_ = signCmd.MarkFlagRequired("file")
+	_ = signCmd.MarkFlagRequired("msg")
+	_ = signCmd.MarkFlagRequired("key")
 
 	// Verify command flags
 	verifyCmd.Flags().StringVarP(&filePath, "file", "f", "", "Target PDF file path (required)")
 	verifyCmd.Flags().StringVarP(&key, "key", "k", "", "32-byte decryption key (required)")
-	verifyCmd.MarkFlagRequired("file")
-	verifyCmd.MarkFlagRequired("key")
+	_ = verifyCmd.MarkFlagRequired("file")
+	_ = verifyCmd.MarkFlagRequired("key")
 }
 
 func Execute() error {

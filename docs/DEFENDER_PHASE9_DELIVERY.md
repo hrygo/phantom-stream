@@ -10,7 +10,8 @@
 **关键文件清单**:
 *   **挑战样本 (Challenge Sample)**: `docs/2511.17467v2_Phase9_Challenge.pdf`
     *   该文件包含 4 重水印锚点。
-    *   Payload 信息: "Phase9:VisualTest"
+    *   Payload 信息: "Phase9:Challenge"
+    *   **修复说明**: 修复了 Content Anchor 导致的页面白板问题，现在隐形水印已正确绑定到现有字体。
 
 ## 3. 技术对抗 (Technical Confrontation)
 *   **观测到的战术**: 针对 Phase 8 红队的“自适应量化”和“流清洗”攻击。

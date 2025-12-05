@@ -49,101 +49,137 @@ func (a *ContentAnchor) Inject(inputPath, outputPath string, payload []byte) err
 
 	// Prepare payload with magic header
 	fullPayload := append(contentMagicHeader, payload...)
-
 	fmt.Printf("[DEBUG] Content: Payload size %d bytes\n", len(fullPayload))
 
-	// Find and modify content streams
 	injectedCount := 0
 
-	for objNr := 1; objNr <= *ctx.XRefTable.Size; objNr++ {
-		entry, found := ctx.Find(objNr)
-		if !found || entry.Free || entry.Object == nil {
+	// Iterate through all pages
+	for i := 1; i <= ctx.PageCount; i++ {
+		// Get page dictionary
+		pageDict, _, _, err := ctx.PageDict(i, false)
+		if err != nil {
+			fmt.Printf("[DEBUG] Content: Failed to get page dict for page %d: %v\n", i, err)
 			continue
 		}
 
-		sd, ok := entry.Object.(types.StreamDict)
-		if !ok {
+		// 1. Ensure a standard font (Helvetica) is available in Resources
+		fontName := "/PhantomHelv" // Unique name to avoid conflict
+
+		// Dereference Resources dict
+		var resDict types.Dict
+		if resObj, ok := pageDict["Resources"]; ok {
+			resDict, err = ctx.XRefTable.DereferenceDict(resObj)
+			if err != nil {
+				fmt.Printf("[DEBUG] Content: Failed to dereference Resources for page %d: %v\n", i, err)
+				continue
+			}
+		} else {
+			// Create new Resources if missing
+			resDict = types.NewDict()
+			pageDict["Resources"] = resDict
+		}
+
+		// Ensure Font dict exists
+		var fontDict types.Dict
+		if fontObj, ok := resDict["Font"]; ok {
+			fontDict, err = ctx.XRefTable.DereferenceDict(fontObj)
+			if err != nil {
+				fmt.Printf("[DEBUG] Content: Failed to dereference Font dict for page %d: %v\n", i, err)
+				continue
+			}
+		} else {
+			fontDict = types.NewDict()
+			resDict["Font"] = fontDict
+		}
+
+		// We need to create a Type1 Font object for Helvetica
+		fontObj := types.NewDict()
+		fontObj.InsertName("Type", "Font")
+		fontObj.InsertName("Subtype", "Type1")
+		fontObj.InsertName("BaseFont", "Helvetica")
+
+		// Add font object to XRefTable
+		fontIndRef, err := ctx.XRefTable.IndRefForNewObject(fontObj)
+		if err != nil {
+			fmt.Printf("[DEBUG] Content: Failed to create font object: %v\n", err)
 			continue
 		}
 
-		// Check if this is a content stream (has operators like Tf, TJ, Tj, etc.)
-		if sd.Subtype() != nil {
-			continue
-		}
+		// Register in page resources
+		fontDict[string(types.Name(fontName[1:]))] = *fontIndRef // Remove leading slash for key
 
-		// Decode the stream
-		if err := sd.Decode(); err != nil {
-			continue
-		}
-
-		content := sd.Content
-		if len(content) == 0 {
-			continue
-		}
-
-		// Check if it looks like a content stream (contains text operators)
-		contentStr := string(content)
-		if !strings.Contains(contentStr, "BT") || !strings.Contains(contentStr, "ET") {
-			continue
-		}
-
-		// Only inject into the first content stream found to avoid duplication
-		if injectedCount > 0 {
-			continue
-		}
-
-		fmt.Printf("[DEBUG] Content: Found content stream in object %d (%d bytes)\n", objNr, len(content))
-
-		// Construct the injection block
-		// We use standard text operators but with spaces and kerning values representing our payload.
-		// Format:
-		// BT
-		// /Helv 1 Tf   (Use a standard font, assuming it exists or is default)
-		// 3 Tr         (Render mode 3: Neither fill nor stroke -> Invisible)
-		// [ ( ) b1 ( ) b2 ... ] TJ
-		// ET
-
+		// 2. Create a NEW content stream with our payload
 		var sb strings.Builder
-		sb.WriteString("\nBT\n/Helv 1 Tf\n3 Tr\n[")
-
+		// Save graphics state (q), Begin Text (BT), Set Font (Tf), Invisible Mode (3 Tr)
+		sb.WriteString(fmt.Sprintf("q\nBT\n%s 1 Tf\n3 Tr\n[", fontName))
 		for _, b := range fullPayload {
-			// We encode each byte as a kerning value.
-			// To avoid confusion with normal text, we can offset it or just use it directly.
-			// Using ( ) <val> ensures we have a pattern to match.
 			sb.WriteString(fmt.Sprintf(" ( ) %d", b))
 		}
+		sb.WriteString(" ] TJ\nET\nQ\n")
 
-		sb.WriteString(" ] TJ\nET\n")
-		injectionBlock := []byte(sb.String())
+		contentData := []byte(sb.String())
 
-		// Append to the end of the stream
-		modifiedContent := append(content, injectionBlock...)
+		// Create stream dict
+		sd := types.NewStreamDict(types.NewDict(), 0, nil, nil, nil)
+		sd.Content = contentData
 
-		fmt.Printf("[DEBUG] Content: Appended %d bytes injection block\n", len(injectionBlock))
-		injectedCount++
-
-		// Compress and update the stream
+		// Compress
 		var buf bytes.Buffer
 		w := zlib.NewWriter(&buf)
-		w.Write(modifiedContent)
+		if _, err := w.Write(contentData); err != nil {
+			w.Close()
+			fmt.Printf("[DEBUG] Content: Failed to write to zlib writer: %v\n", err)
+			continue
+		}
 		w.Close()
 
 		sd.Raw = buf.Bytes()
-		sd.Content = modifiedContent
-		streamLen := int64(len(sd.Raw))
-		sd.StreamLength = &streamLen
 		sd.InsertName("Filter", "FlateDecode")
 
-		entry.Object = sd
+		// Set correct compressed length
+		compressedLen := int64(len(sd.Raw))
+		sd.Insert("Length", types.Integer(compressedLen))
+		sd.StreamLength = &compressedLen
+
+		// Add stream to XRefTable
+		streamIndRef, err := ctx.XRefTable.IndRefForNewObject(sd)
+		if err != nil {
+			fmt.Printf("[DEBUG] Content: Failed to create stream object: %v\n", err)
+			continue
+		}
+
+		// 3. Append new stream to page Contents
+		if contentObj, ok := pageDict["Contents"]; ok {
+			if ref, ok := contentObj.(types.IndirectRef); ok {
+				// Convert single ref to array: [OldRef, NewRef]
+				arr := types.Array{ref, *streamIndRef}
+				pageDict["Contents"] = arr
+			} else if arr, ok := contentObj.(types.Array); ok {
+				// Append to existing array
+				arr = append(arr, *streamIndRef)
+				pageDict["Contents"] = arr
+			} else {
+				// Unknown type, overwrite (risky) or skip
+				fmt.Printf("[DEBUG] Content: Unknown Contents type for page %d\n", i)
+				continue
+			}
+		} else {
+			// No contents, set as single ref
+			pageDict["Contents"] = *streamIndRef
+		}
+
+		fmt.Printf("[DEBUG] Content: Injected new stream into page %d using font %s\n", i, fontName)
+		injectedCount++
 	}
 
 	if injectedCount == 0 {
-		return fmt.Errorf("no content streams found for injection")
+		return fmt.Errorf("failed to inject into any page")
 	}
 
-	fmt.Printf("[DEBUG] Content: Injected into %d stream(s)\n", injectedCount)
+	fmt.Printf("[DEBUG] Content: Injected into %d pages\n", injectedCount)
 
 	// Write output
+	fmt.Printf("[DEBUG] Content: Writing output to %s\n", outputPath)
 	if err := api.WriteContextFile(ctx, outputPath); err != nil {
 		return fmt.Errorf("failed to write output: %w", err)
 	}

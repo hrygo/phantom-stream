@@ -211,3 +211,5 @@ temp/
 # Specific attacker binary
 attacker/attacker
 
+defender/bin/phantom-guard
+SMask

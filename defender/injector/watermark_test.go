@@ -12,7 +12,8 @@ import (
 
 // Test constants
 const (
-	testKey32   = "12345678901234567890123456789012" // 32 bytes
+	testKey32 = "12345678901234567890123456789012" // 32 bytes
+
 	testMessage = "TestUser:Phase6-Optimized"
 )
 

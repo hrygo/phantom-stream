@@ -13,12 +13,10 @@ import (
 )
 
 // Test constants for Phase 7
-const (
-	testPDFPath = "../testdata/2511.17467v2.pdf"
-)
+// testPDFPath is defined in integration_test.go
 
-// TestPhase7DualAnchorSign tests the dual-anchor signature mechanism
-func TestPhase7DualAnchorSign(t *testing.T) {
+// TestWatermarkDualAnchorSign tests the dual-anchor signature mechanism
+func TestWatermarkDualAnchorSign(t *testing.T) {
 	// Skip if test PDF doesn't exist
 	if _, err := os.Stat(testPDFPath); os.IsNotExist(err) {
 		t.Skip("Test PDF not found, skipping Phase 7 integration test")
@@ -33,14 +31,14 @@ func TestPhase7DualAnchorSign(t *testing.T) {
 	}{
 		{
 			name:        "Valid dual-anchor signature",
-			message:     "Phase7:Test-DualAnchor",
+			message:     "WatermarkDualAnchor:Test-DualAnchor",
 			key:         testKey32,
 			round:       "Test",
 			expectError: false,
 		},
 		{
 			name:        "Long message",
-			message:     "Phase7:VeryLongMessage-" + string(make([]byte, 100)),
+			message:     "WatermarkDualAnchor:VeryLongMessage-" + string(make([]byte, 100)),
 			key:         testKey32,
 			round:       "Test",
 			expectError: false,
@@ -50,7 +48,7 @@ func TestPhase7DualAnchorSign(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test signing
-			err := Sign(testPDFPath, tt.message, tt.key, tt.round)
+			err := Sign(testPDFPath, tt.message, tt.key, tt.round, nil)
 
 			if tt.expectError {
 				if err == nil {
@@ -76,18 +74,18 @@ func TestPhase7DualAnchorSign(t *testing.T) {
 	}
 }
 
-// TestPhase7DualAnchorVerify tests verification with both anchors
-func TestPhase7DualAnchorVerify(t *testing.T) {
+// TestWatermarkDualAnchorVerify tests verification with both anchors
+func TestWatermarkDualAnchorVerify(t *testing.T) {
 	// Skip if test PDF doesn't exist
 	if _, err := os.Stat(testPDFPath); os.IsNotExist(err) {
 		t.Skip("Test PDF not found, skipping Phase 7 integration test")
 	}
 
-	testMessage := "Phase7:Verify-Test"
+	testMessage := "WatermarkDualAnchor:Verify-Test"
 	testRound := "VerifyTest"
 
 	// Create signed PDF
-	err := Sign(testPDFPath, testMessage, testKey32, testRound)
+	err := Sign(testPDFPath, testMessage, testKey32, testRound, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test signed PDF: %v", err)
 	}
@@ -116,7 +114,7 @@ func TestPhase7DualAnchorVerify(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			message, err := Verify(signedPath, tt.key)
+			message, _, err := Verify(signedPath, tt.key, nil)
 
 			if tt.expectError {
 				if err == nil {
@@ -136,18 +134,18 @@ func TestPhase7DualAnchorVerify(t *testing.T) {
 	}
 }
 
-// TestPhase7SMaskAnchorFallback tests SMask anchor as fallback
-func TestPhase7SMaskAnchorFallback(t *testing.T) {
+// TestWatermarkDualAnchorSMaskAnchorFallback tests SMask anchor as fallback
+func TestWatermarkDualAnchorSMaskAnchorFallback(t *testing.T) {
 	// Skip if test PDF doesn't exist
 	if _, err := os.Stat(testPDFPath); os.IsNotExist(err) {
 		t.Skip("Test PDF not found, skipping Phase 7 integration test")
 	}
 
-	testMessage := "Phase7:SMask-Fallback-Test"
+	testMessage := "WatermarkDualAnchor:SMask-Fallback-Test"
 	testRound := "SMaskTest"
 
 	// Create signed PDF
-	err := Sign(testPDFPath, testMessage, testKey32, testRound)
+	err := Sign(testPDFPath, testMessage, testKey32, testRound, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test signed PDF: %v", err)
 	}
@@ -165,7 +163,7 @@ func TestPhase7SMaskAnchorFallback(t *testing.T) {
 	}
 
 	// Verify using SMask anchor only
-	message, err := Verify(noAttachPath, testKey32)
+	message, _, err := Verify(noAttachPath, testKey32, nil)
 	if err != nil {
 		t.Fatalf("SMask fallback verification failed: %v", err)
 	}
@@ -175,18 +173,18 @@ func TestPhase7SMaskAnchorFallback(t *testing.T) {
 	}
 }
 
-// TestPhase7AttachmentAnchorOnly tests attachment anchor independently
-func TestPhase7AttachmentAnchorOnly(t *testing.T) {
+// TestWatermarkDualAnchorAttachmentAnchorOnly tests attachment anchor independently
+func TestWatermarkDualAnchorAttachmentAnchorOnly(t *testing.T) {
 	// Skip if test PDF doesn't exist
 	if _, err := os.Stat(testPDFPath); os.IsNotExist(err) {
 		t.Skip("Test PDF not found, skipping Phase 7 integration test")
 	}
 
-	testMessage := "Phase7:Attachment-Only-Test"
+	testMessage := "WatermarkDualAnchor:Attachment-Only-Test"
 	testRound := "AttachTest"
 
 	// Create signed PDF
-	err := Sign(testPDFPath, testMessage, testKey32, testRound)
+	err := Sign(testPDFPath, testMessage, testKey32, testRound, nil)
 	if err != nil {
 		t.Fatalf("Failed to create test signed PDF: %v", err)
 	}
@@ -195,7 +193,7 @@ func TestPhase7AttachmentAnchorOnly(t *testing.T) {
 	defer os.Remove(signedPath)
 
 	// Verify using attachment anchor (should succeed first)
-	message, err := Verify(signedPath, testKey32)
+	message, _, err := Verify(signedPath, testKey32, nil)
 	if err != nil {
 		t.Fatalf("Attachment anchor verification failed: %v", err)
 	}
@@ -205,8 +203,8 @@ func TestPhase7AttachmentAnchorOnly(t *testing.T) {
 	}
 }
 
-// TestPhase7SMaskInjection tests SMask injection mechanism
-func TestPhase7SMaskInjection(t *testing.T) {
+// TestWatermarkDualAnchorSMaskInjection tests SMask injection mechanism
+func TestWatermarkDualAnchorSMaskInjection(t *testing.T) {
 	// Skip if test PDF doesn't exist
 	if _, err := os.Stat(testPDFPath); os.IsNotExist(err) {
 		t.Skip("Test PDF not found, skipping Phase 7 SMask test")
@@ -215,7 +213,7 @@ func TestPhase7SMaskInjection(t *testing.T) {
 	outputPath := filepath.Join(t.TempDir(), "test_smask.pdf")
 
 	// Create test payload
-	testPayload, err := createEncryptedPayload("Phase7:SMask-Test", []byte(testKey32))
+	testPayload, err := createEncryptedPayload("WatermarkDualAnchor:SMask-Test", []byte(testKey32))
 	if err != nil {
 		t.Fatalf("Failed to create test payload: %v", err)
 	}
@@ -252,8 +250,8 @@ func TestPhase7SMaskInjection(t *testing.T) {
 	}
 }
 
-// TestPhase7FileSizeImpact tests file size changes after signing
-func TestPhase7FileSizeImpact(t *testing.T) {
+// TestWatermarkDualAnchorFileSizeImpact tests file size changes after signing
+func TestWatermarkDualAnchorFileSizeImpact(t *testing.T) {
 	// Skip if test PDF doesn't exist
 	if _, err := os.Stat(testPDFPath); os.IsNotExist(err) {
 		t.Skip("Test PDF not found, skipping Phase 7 file size test")
@@ -269,7 +267,7 @@ func TestPhase7FileSizeImpact(t *testing.T) {
 	origSize := origInfo.Size()
 
 	// Create signed PDF
-	err = Sign(testPDFPath, "Phase7:Size-Test", testKey32, testRound)
+	err = Sign(testPDFPath, "WatermarkDualAnchor:Size-Test", testKey32, testRound, nil)
 	if err != nil {
 		t.Fatalf("Failed to sign PDF: %v", err)
 	}
@@ -298,19 +296,19 @@ func TestPhase7FileSizeImpact(t *testing.T) {
 	}
 }
 
-// BenchmarkPhase7DualAnchorSign benchmarks the dual-anchor signing process
-func BenchmarkPhase7DualAnchorSign(b *testing.B) {
+// BenchmarkWatermarkDualAnchorSign benchmarks the dual-anchor signing process
+func BenchmarkWatermarkDualAnchorSign(b *testing.B) {
 	// Skip if test PDF doesn't exist
 	if _, err := os.Stat(testPDFPath); os.IsNotExist(err) {
 		b.Skip("Test PDF not found, skipping Phase 7 benchmark")
 	}
 
-	testMessage := "Phase7:Benchmark-Test"
+	testMessage := "WatermarkDualAnchor:Benchmark-Test"
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		testRound := "Bench" + string(rune(i))
-		err := Sign(testPDFPath, testMessage, testKey32, testRound)
+		err := Sign(testPDFPath, testMessage, testKey32, testRound, nil)
 		if err != nil {
 			b.Fatalf("Sign failed: %v", err)
 		}
@@ -321,18 +319,18 @@ func BenchmarkPhase7DualAnchorSign(b *testing.B) {
 	}
 }
 
-// BenchmarkPhase7DualAnchorVerify benchmarks the dual-anchor verification process
-func BenchmarkPhase7DualAnchorVerify(b *testing.B) {
+// BenchmarkWatermarkDualAnchorVerify benchmarks the dual-anchor verification process
+func BenchmarkWatermarkDualAnchorVerify(b *testing.B) {
 	// Skip if test PDF doesn't exist
 	if _, err := os.Stat(testPDFPath); os.IsNotExist(err) {
 		b.Skip("Test PDF not found, skipping Phase 7 benchmark")
 	}
 
-	testMessage := "Phase7:Benchmark-Verify-Test"
+	testMessage := "WatermarkDualAnchor:Benchmark-Verify-Test"
 	testRound := "BenchVerify"
 
 	// Create signed PDF once
-	err := Sign(testPDFPath, testMessage, testKey32, testRound)
+	err := Sign(testPDFPath, testMessage, testKey32, testRound, nil)
 	if err != nil {
 		b.Fatalf("Failed to create test signed PDF: %v", err)
 	}
@@ -342,7 +340,7 @@ func BenchmarkPhase7DualAnchorVerify(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_, err := Verify(signedPath, testKey32)
+		_, _, err := Verify(signedPath, testKey32, nil)
 		if err != nil {
 			b.Fatalf("Verify failed: %v", err)
 		}
