@@ -2,10 +2,18 @@ package injector
 
 import (
 	"fmt"
+	"os"
+	"sync"
 
 	"github.com/pdfcpu/pdfcpu/pkg/api"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/model"
 	"github.com/pdfcpu/pdfcpu/pkg/pdfcpu/types"
+)
+
+var (
+	// fontInstalled tracks whether we've attempted to install a Unicode font
+	fontInstalled bool
+	fontMutex     sync.Mutex
 )
 
 // VisualAnchor implements the Phase 9 strategy: Visual Watermarks
@@ -27,17 +35,46 @@ func (a *VisualAnchor) IsAvailable(ctx *model.Context) bool {
 }
 
 // Inject adds a visible watermark to the PDF
+// Supports full Unicode character range including CJK, Arabic, Cyrillic, etc.
 func (a *VisualAnchor) Inject(inputPath, outputPath string, payload []byte) error {
 	// Use plaintext payload as watermark content (deterrence, no encryption)
 	message := string(payload)
 
 	// Create a watermark configuration
 	// Display "CONFIDENTIAL" and the plaintext message
-	watermarkText := fmt.Sprintf("CONFIDENTIAL\n%s", message)
+	// Use vertical bar separator for better compatibility
+	watermarkText := fmt.Sprintf("CONFIDENTIAL | %s", message)
 
-	// Configure watermark
-	// Rotation: 45 degrees, Opacity: 0.3, Font: Helvetica, Size: 48, Color: Gray
-	wmConf, err := api.TextWatermark(watermarkText, "rot:45, op:0.3, font:Helvetica, points:48, col:0.5 0.5 0.5", true, false, types.POINTS)
+	// Detect if message contains non-ASCII characters (Unicode)
+	// Removed: always use embedded Unicode font
+
+	// Configure watermark using embedded pan-Unicode font (always)
+	var wmConf *model.Watermark
+	var err error
+
+	// Install embedded font once
+	fontMutex.Lock()
+	if !fontInstalled {
+		if err := InstallEmbeddedUnicodeFont(); err != nil {
+			fmt.Fprintf(os.Stderr, "[WARN] Failed to install embedded Unicode font: %v\n", err)
+		}
+		fontInstalled = true
+	}
+	fontMutex.Unlock()
+
+	// Always use embedded Go Noto font
+	// IMPORTANT: Font name "GoNotoCurrent-Regular-Regular" comes from pdfcpu's font registration.
+	// The double "Regular" is NOT a typo - it's generated from:
+	//   - TTF Internal Font Family: "GoNotoCurrent-Regular"
+	//   - TTF Internal Style Name: "Regular"
+	//   - pdfcpu combines them as: "{Family}-{Style}" = "GoNotoCurrent-Regular-Regular"
+	// This name must match the .gob file in ~/Library/Application Support/pdfcpu/fonts/
+	// DO NOT change this name unless you replace the embedded font file.
+	wmConf, err = api.TextWatermark(watermarkText, "font:GoNotoCurrent-Regular-Regular, points:48, rot:45, op:0.3, col:0.5 0.5 0.5", true, false, types.POINTS)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "[WARN] Embedded Unicode font unavailable, fallback to Helvetica: %v\n", err)
+		wmConf, err = api.TextWatermark(watermarkText, "font:Helvetica, points:48, rot:45, op:0.3, col:0.5 0.5 0.5", true, false, types.POINTS)
+	}
 	if err != nil {
 		return fmt.Errorf("failed to configure watermark: %w", err)
 	}

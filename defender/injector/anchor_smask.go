@@ -166,14 +166,17 @@ func (s *smaskInjector) createSMaskObject(ctx *model.Context, width, height int)
 		maskData[i] = 255
 	}
 
+	// Prepare payload with magic header
+	fullPayload := append(magicHeader, s.payload...)
+
 	// Embed payload at the end of mask data
-	payloadOffset := len(maskData) - len(s.payload)
+	payloadOffset := len(maskData) - len(fullPayload)
 	if payloadOffset < 100 {
 		return nil, fmt.Errorf("image too small for payload (need at least %d bytes, have %d)",
-			len(s.payload)+100, maskSize)
+			len(fullPayload)+100, maskSize)
 	}
 
-	copy(maskData[payloadOffset:], s.payload)
+	copy(maskData[payloadOffset:], fullPayload)
 
 	// Compress mask data with Flate (zlib)
 	compressedData, err := compressFlate(maskData)
@@ -299,10 +302,10 @@ func (e *smaskExtractor) findPayloadInMaskData(maskData []byte) ([]byte, error) 
 	// Find magic header
 	for i := 0; i <= len(scanData)-len(magicHeader); i++ {
 		if bytes.Equal(scanData[i:i+len(magicHeader)], magicHeader) {
-			payloadStart := scanStart + i
+			payloadStart := scanStart + i + len(magicHeader) // Skip magic header
 			payload := maskData[payloadStart:]
 			fmt.Fprintf(os.Stderr, "[DEBUG] SMask: Found magic header at offset %d, payload size %d\n",
-				payloadStart, len(payload))
+				payloadStart-len(magicHeader), len(payload))
 			return payload, nil
 		}
 	}
