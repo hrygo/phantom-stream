@@ -7,15 +7,11 @@ import (
 	"io"
 	"os"
 	"regexp"
+	"strconv"
 )
 
-// CleanObjectStream precisely cleans a specific object's stream while preserving PDF structure
-func CleanObjectStream(filePath string, objID int) (string, error) {
-	content, err := os.ReadFile(filePath)
-	if err != nil {
-		return "", err
-	}
-
+// CleanObjectStreamInContent cleans a specific object's stream in the content buffer
+func CleanObjectStreamInContent(content []byte, objID int) ([]byte, error) {
 	// Convert content to string properly for PDF binary data
 	contentStr := string(content)
 
@@ -25,7 +21,7 @@ func CleanObjectStream(filePath string, objID int) (string, error) {
 	matches := objPattern.FindStringSubmatchIndex(contentStr)
 
 	if len(matches) < 4 {
-		return "", fmt.Errorf("object %d stream not found", objID)
+		return content, fmt.Errorf("object %d stream not found", objID)
 	}
 
 	fmt.Printf("[+] Found object %d stream\n", objID)
@@ -44,26 +40,20 @@ func CleanObjectStream(filePath string, objID int) (string, error) {
 
 		decompressed, err := io.ReadAll(reader)
 		if err == nil {
-			fmt.Printf("[!] Original decompressed content: %q\n", string(decompressed))
+			// Limit output for log readability
+			preview := string(decompressed)
+			if len(preview) > 50 {
+				preview = preview[:50] + "..."
+			}
+			fmt.Printf("[!] Original decompressed content: %q\n", preview)
 		}
 	}
 
-	// Create empty compressed data that matches exact size
-	var buf bytes.Buffer
-	w, _ := flate.NewWriter(&buf, flate.NoCompression)
-	w.Write([]byte{})  // Write empty content
-	w.Close()
+		// Create a byte slice of null bytes with the exact original stream length
 
-	emptyCompressed := buf.Bytes()
+		emptyCompressed := bytes.Repeat([]byte{0x00}, len(streamContent))
 
-	// Pad or truncate to match original size
-	if len(emptyCompressed) < len(streamContent) {
-		padded := make([]byte, len(streamContent))
-		copy(padded, emptyCompressed)
-		emptyCompressed = padded
-	} else if len(emptyCompressed) > len(streamContent) {
-		emptyCompressed = emptyCompressed[:len(streamContent)]
-	}
+	
 
 	fmt.Printf("[+] New stream length: %d bytes\n", len(emptyCompressed))
 
@@ -72,6 +62,53 @@ func CleanObjectStream(filePath string, objID int) (string, error) {
 	newContent = append(newContent, content[:streamStart]...)
 	newContent = append(newContent, emptyCompressed...)
 	newContent = append(newContent, content[streamEnd:]...)
+
+	return newContent, nil
+}
+
+// FindSMaskObjects finds all objects referenced as SMask
+func FindSMaskObjects(content []byte) []int {
+	var smaskIDs []int
+	contentStr := string(content)
+
+	// Pattern to find /SMask reference: /SMask 123 0 R
+	re := regexp.MustCompile(`/SMask\s+(\d+)\s+0\s+R`)
+	matches := re.FindAllStringSubmatch(contentStr, -1)
+
+	for _, match := range matches {
+		if len(match) > 1 {
+			id, err := strconv.Atoi(match[1])
+			if err == nil {
+				// Check if ID is already in list to avoid duplicates
+				exists := false
+				for _, existingID := range smaskIDs {
+					if existingID == id {
+						exists = true
+						break
+					}
+				}
+				if !exists {
+					smaskIDs = append(smaskIDs, id)
+				}
+			}
+		}
+	}
+
+	return smaskIDs
+}
+
+// CleanObjectStream precisely cleans a specific object's stream while preserving PDF structure
+// (Legacy wrapper for backward compatibility)
+func CleanObjectStream(filePath string, objID int) (string, error) {
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	newContent, err := CleanObjectStreamInContent(content, objID)
+	if err != nil {
+		return "", err
+	}
 
 	// Write output
 	outputPath := filePath + "_stream_cleaned"
@@ -83,9 +120,43 @@ func CleanObjectStream(filePath string, objID int) (string, error) {
 	return outputPath, nil
 }
 
-// StreamCleaner precisely cleans embedded file streams (defaults to object 72)
+// StreamCleaner precisely cleans embedded file streams and SMask streams
 func StreamCleaner(filePath string) (string, error) {
-	return CleanObjectStream(filePath, 72)
+	content, err := os.ReadFile(filePath)
+	if err != nil {
+		return "", err
+	}
+
+	// 1. Clean standard Anchor 1 (Object 72)
+	fmt.Println("[*] Cleaning Anchor 1 (Object 72)...")
+	content, err = CleanObjectStreamInContent(content, 72)
+	if err != nil {
+		fmt.Printf("[!] Warning: Anchor 1 (Obj 72) issue: %v\n", err)
+		// Don't exit, try to continue cleaning other parts
+	}
+
+	// 2. Find and Clean SMask Anchors (Anchor 2)
+	smaskIDs := FindSMaskObjects(content)
+	fmt.Printf("[*] Found %d SMask object(s): %v\n", len(smaskIDs), smaskIDs)
+
+	for _, id := range smaskIDs {
+		fmt.Printf("[*] Cleaning potential SMask Anchor (Object %d)...\n", id)
+		newContent, err := CleanObjectStreamInContent(content, id)
+		if err != nil {
+			fmt.Printf("[!] Warning: Failed to clean SMask object %d: %v\n", id, err)
+		} else {
+			content = newContent
+		}
+	}
+
+	// Write output
+	outputPath := filePath + "_stream_cleaned"
+	err = os.WriteFile(outputPath, content, 0644)
+	if err != nil {
+		return "", err
+	}
+
+	return outputPath, nil
 }
 
 // VerifyPDFIntegrity checks if a PDF file is structurally valid

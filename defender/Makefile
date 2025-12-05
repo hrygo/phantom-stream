@@ -218,7 +218,7 @@ notify-red: ## 显示红方通知消息 (可通过 ROUND=R3 指定轮次)
 	@echo ""
 	@echo "$(COLOR_BOLD)验证方式$(COLOR_RESET)："
 	@echo "- 样本文件已就绪，请自行测试"
-	@echo "- 文件路径：docs/2511.17467v2_$(ROUND)_signed.pdf"
+	@echo "- 文件路径：$(SIGNED_FILE)"
 	@echo ""
 	@echo "$(COLOR_BOLD)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
 	@echo ""

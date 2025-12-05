@@ -14,3 +14,6 @@
 5.  **报告规范（Reporting Standards）：**
     *   攻防双方在提交阶段性总结报告时，必须严格遵循 `docs/REPORT_TEMPLATE.md` 模板格式，并直接输出报告即可，无需写报告文件。
     *   报告中**严禁**包含对方尚未知晓或未实际发生的攻防方案（即“上帝视角”信息）。
+    *   **实时战报更新**：
+        *   **Attacker (红队)**: 每次取得实质性进展后，必须更新 `attacker/PHANTOMSTREAM_FINAL_REPORT.md`。
+        *   **Defender (蓝队)**: 每次取得实质性进展后，必须更新 `defender/docs/Defender_Official_Report.md`。
