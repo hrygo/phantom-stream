@@ -199,11 +199,14 @@ temp/
 *.tmp
 
 # PDF Processed files (specific to this project)
-*_processed.pdf
+# Ignore all PDF files
+*.pdf
+
+# But do not ignore the original file in docs/
+!docs/2511.17467v2.pdf
+
 *_stream_cleaned
 *_sanitized
-*_cleaned.pdf
-*_repaired.pdf
 
 # Specific attacker binary
 attacker/attacker
