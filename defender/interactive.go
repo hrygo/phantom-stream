@@ -223,7 +223,8 @@ func interactiveVerify(scanner *bufio.Scanner) {
 	var selectedAnchors []string
 
 	if mode == "2" {
-		fmt.Println("\nAvailable Anchors: Attachment, SMask, Content, Visual")
+		fmt.Println("\nAvailable Anchors: Attachment, SMask, Content")
+		fmt.Println(ColorYellow + "Note: Visual watermark does not support extraction/verification" + ColorReset)
 		fmt.Print("Enter anchor names separated by comma (e.g. 'SMask'):\n> ")
 		if !scanner.Scan() {
 			return

@@ -115,7 +115,12 @@ func Sign(filePath, message, key, round string, selectedAnchors []string) error 
 
 		fmt.Printf("[*] Injecting Anchor %d/%d: %s...\n", i+1, len(anchorsToUse), anchor.Name())
 
-		if err := anchor.Inject(currentInput, output, payload); err != nil {
+		// Visual anchor displays plaintext; others use encrypted payload
+		injectPayload := payload
+		if anchor.Name() == "Visual" {
+			injectPayload = []byte(message)
+		}
+		if err := anchor.Inject(currentInput, output, injectPayload); err != nil {
 			fmt.Fprintf(os.Stderr, "⚠ Warning: %s injection failed: %v\n", anchor.Name(), err)
 			// If injection failed, we need to ensure the chain continues.
 			// If this is the first step, we haven't created any temp file yet.

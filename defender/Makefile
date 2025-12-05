@@ -1,253 +1,173 @@
-.PHONY: help build clean test test-verbose test-integration bench-integration run-sign run-verify install lint fmt vet check dev-deps deliver-red notify-red
+.PHONY: help all build install clean \
+	test test-unit test-integration test-race test-all test-coverage bench \
+	lint fmt vet check \
+	deps tidy dev-deps \
+	sign verify
+
+# --- 全局变量 ---
+BINARY_NAME := phantom-guard
+BUILD_DIR := ./bin
+GO := go
+GOFLAGS := -v
+LDFLAGS := -ldflags "-s -w"
+
+# 测试配置
+TEST_TIMEOUT := 30s
+COVERAGE_FILE := coverage.out
+COVERAGE_HTML := coverage.html
+INTEGRATION_TAG := integration
+
+# 默认测试数据
+DEFAULT_KEY := 12345678901234567890123456789012
+TEST_PDF := testdata/2511.17467v2.pdf
+
+# 颜色定义
+COLOR_RESET   := \033[0m
+COLOR_BOLD    := \033[1m
+COLOR_RED     := \033[31m
+COLOR_GREEN   := \033[32m
+COLOR_YELLOW  := \033[33m
+COLOR_BLUE    := \033[34m
+COLOR_PURPLE  := \033[35m
+COLOR_CYAN    := \033[36m
+COLOR_WHITE   := \033[37m
 
 # 默认目标
 .DEFAULT_GOAL := help
 
-# 变量定义
-BINARY_NAME=phantom-guard
-BUILD_DIR=./bin
-GO=go
-GOFLAGS=-v
-LDFLAGS=-ldflags "-s -w"
-
-# 红方交付配置
-SOURCE_PDF=../docs/2511.17467v2.pdf
-OUTPUT_DIR=../docs
-DEFAULT_KEY=12345678901234567890123456789012
-ROUND?=R3
-
-# 可覆盖的密钥（默认使用 DEFAULT_KEY）
-KEY?=$(DEFAULT_KEY)
-
-# 路径派生变量（基于 SOURCE_PDF 派生签名文件路径）
-SRC_DIR := $(dir $(SOURCE_PDF))
-SRC_BASE := $(notdir $(SOURCE_PDF))
-SRC_NAME := $(basename $(SRC_BASE))
-SIGNED_FILE := $(SRC_DIR)$(SRC_NAME)_$(ROUND)_signed.pdf
-
-# 输出目录默认与源文件目录一致（如需另存，可覆盖 OUTPUT_DIR）
-OUTPUT_DIR?=$(SRC_DIR)
-
-# 颜色输出
-COLOR_RESET=\033[0m
-COLOR_BOLD=\033[1m
-COLOR_GREEN=\033[32m
-COLOR_YELLOW=\033[33m
-COLOR_BLUE=\033[34m
+##@ General
 
 help: ## 显示帮助信息
-	@echo "$(COLOR_BOLD)$(COLOR_BLUE)Defender - 可用命令:$(COLOR_RESET)"
+	@echo "$(COLOR_BOLD)$(COLOR_BLUE)Defender - PhantomGuard 开发构建工具$(COLOR_RESET)"
 	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  $(COLOR_GREEN)%-15s$(COLOR_RESET) %s\n", $$1, $$2}'
+	@echo "$(COLOR_BOLD)使用说明:$(COLOR_RESET)"
+	@echo "  make [command] [VARIABLE=value]"
+	@echo ""
+	@echo "$(COLOR_BOLD)可用命令:$(COLOR_RESET)"
+	@awk 'BEGIN {FS = ":.*##"; printf ""} \
+		/^##@/ { printf "\n$(COLOR_PURPLE)%s$(COLOR_RESET)\n", substr($$0, 5) } \
+		/^[a-zA-Z_-]+:.*?##/ { printf "  $(COLOR_CYAN)%-20s$(COLOR_RESET) %s\n", $$1, $$2 }' $(MAKEFILE_LIST)
 	@echo ""
 
-build: ## 编译项目
-	@echo "$(COLOR_YELLOW)🔨 编译 $(BINARY_NAME)...$(COLOR_RESET)"
+all: clean deps check build ## 执行完整 CI 流程 (清理 -> 依赖 -> 检查 -> 编译)
+
+clean: ## 清理构建产物、缓存和临时文件
+	@echo "$(COLOR_YELLOW)🧹 清理环境...$(COLOR_RESET)"
+	@rm -rf $(BUILD_DIR)
+	@rm -f $(COVERAGE_FILE) $(COVERAGE_HTML)
+	@rm -f *_signed.pdf *_temp*.pdf
+	@$(GO) clean -cache -testcache
+	@echo "$(COLOR_GREEN)✅ 清理完成$(COLOR_RESET)"
+
+##@ Build & Install
+
+build: ## 编译发布版本 (stripped & optimized)
+	@echo "$(COLOR_YELLOW)🔨 编译发布版本...$(COLOR_RESET)"
 	@mkdir -p $(BUILD_DIR)
 	@$(GO) build $(GOFLAGS) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) .
-	@echo "$(COLOR_GREEN)✅ 编译完成: $(BUILD_DIR)/$(BINARY_NAME)$(COLOR_RESET)"
+	@echo "$(COLOR_GREEN)✅ 编译成功: $(BUILD_DIR)/$(BINARY_NAME)$(COLOR_RESET)"
 
-build-dev: ## 编译开发版本（包含调试信息）
+build-dev: ## 编译开发版本 (保留调试符号)
 	@echo "$(COLOR_YELLOW)🔨 编译开发版本...$(COLOR_RESET)"
 	@mkdir -p $(BUILD_DIR)
 	@$(GO) build $(GOFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) .
-	@echo "$(COLOR_GREEN)✅ 开发版本编译完成$(COLOR_RESET)"
+	@echo "$(COLOR_GREEN)✅ 开发版本编译成功$(COLOR_RESET)"
 
-clean: ## 清理编译产物和缓存
-	@echo "$(COLOR_YELLOW)🧹 清理编译产物...$(COLOR_RESET)"
-	@rm -rf $(BUILD_DIR)
-	@$(GO) clean -cache -testcache -modcache
-	@echo "$(COLOR_GREEN)✅ 清理完成$(COLOR_RESET)"
+install: build ## 安装到系统路径 (/usr/local/bin)
+	@echo "$(COLOR_YELLOW)📦 安装到系统...$(COLOR_RESET)"
+	@cp $(BUILD_DIR)/$(BINARY_NAME) /usr/local/bin/
+	@echo "$(COLOR_GREEN)✅ 安装完成$(COLOR_RESET)"
 
-test: ## 运行测试
-	@echo "$(COLOR_YELLOW)🧪 运行测试...$(COLOR_RESET)"
-	@$(GO) test ./... -cover
-	@echo "$(COLOR_GREEN)✅ 测试完成$(COLOR_RESET)"
+##@ Development & Testing
 
-test-verbose: ## 运行详细测试
-	@echo "$(COLOR_YELLOW)🧪 运行详细测试...$(COLOR_RESET)"
-	@$(GO) test ./... -v -cover -coverprofile=coverage.out
-	@echo "$(COLOR_GREEN)✅ 测试完成$(COLOR_RESET)"
+test: test-unit ## 运行标准单元测试
 
-# 集成测试（需要启用 build tag）
-test-integration: ## 运行集成测试（需启用 build tag）
+test-unit: ## 运行单元测试 (排除集成测试)
+	@echo "$(COLOR_YELLOW)🧪 运行单元测试...$(COLOR_RESET)"
+	@$(GO) test ./... -v -timeout $(TEST_TIMEOUT) -short
+
+test-integration: ## 运行集成测试 (需环境支持)
 	@echo "$(COLOR_YELLOW)🧪 运行集成测试...$(COLOR_RESET)"
-	@$(GO) test ./... -tags=integration -v
-	@echo "$(COLOR_GREEN)✅ 集成测试完成$(COLOR_RESET)"
+	@if [ ! -f $(TEST_PDF) ]; then \
+		echo "$(COLOR_RED)⚠️  警告: 测试文件 $(TEST_PDF) 不存在$(COLOR_RESET)"; \
+	fi
+	@$(GO) test ./... -v -tags=$(INTEGRATION_TAG) -timeout 2m
 
-bench-integration: ## 运行集成基准测试（需启用 build tag）
-	@echo "$(COLOR_YELLOW)⚡ 运行集成基准测试...$(COLOR_RESET)"
-	@$(GO) test ./... -tags=integration -bench=. -benchmem
-	@echo "$(COLOR_GREEN)✅ 集成基准测试完成$(COLOR_RESET)"
+test-race: ## 运行竞态检测
+	@echo "$(COLOR_YELLOW)🏃 运行竞态检测...$(COLOR_RESET)"
+	@$(GO) test ./... -race -v -timeout $(TEST_TIMEOUT)
 
-test-coverage: ## 生成测试覆盖率报告
+test-all: test-unit test-integration ## 运行所有测试 (单元 + 集成)
+
+test-coverage: ## 生成并查看测试覆盖率报告
 	@echo "$(COLOR_YELLOW)📊 生成覆盖率报告...$(COLOR_RESET)"
-	@$(GO) test ./... -coverprofile=coverage.out
-	@$(GO) tool cover -html=coverage.out -o coverage.html
-	@echo "$(COLOR_GREEN)✅ 覆盖率报告已生成: coverage.html$(COLOR_RESET)"
+	@$(GO) test ./... -tags=$(INTEGRATION_TAG) -coverprofile=$(COVERAGE_FILE) -covermode=atomic -timeout 2m
+	@$(GO) tool cover -html=$(COVERAGE_FILE) -o $(COVERAGE_HTML)
+	@echo "$(COLOR_GREEN)✅ 报告已生成: $(COVERAGE_HTML)$(COLOR_RESET)"
+	@$(GO) tool cover -func=$(COVERAGE_FILE) | tail -n 1
 
 bench: ## 运行基准测试
 	@echo "$(COLOR_YELLOW)⚡ 运行基准测试...$(COLOR_RESET)"
-	@$(GO) test ./... -bench=. -benchmem
+	@$(GO) test ./... -tags=$(INTEGRATION_TAG) -bench=. -benchmem -run=^$$
 
-run-sign: ## 运行签名命令示例 (需要设置 FILE, MSG, KEY 变量)
-	@echo "$(COLOR_YELLOW)🛡️  执行签名操作...$(COLOR_RESET)"
-	@if [ -z "$(FILE)" ] || [ -z "$(MSG)" ] || [ -z "$(KEY)" ]; then \
-		echo "$(COLOR_BOLD)使用方式:$(COLOR_RESET) make run-sign FILE=path/to/file.pdf MSG='UserID:123' KEY='your-32-byte-key-here!!!!!!!!' [ROUND=11]"; \
-		exit 1; \
-	fi
-	@$(GO) run . sign -f $(FILE) -m "$(MSG)" -k "$(KEY)" $(if $(ROUND),-r $(ROUND),)
+##@ Quality Control
 
-run-verify: ## 运行验证命令示例 (需要设置 FILE, KEY 变量)
-	@echo "$(COLOR_YELLOW)🔍 执行验证操作...$(COLOR_RESET)"
-	@if [ -z "$(FILE)" ] || [ -z "$(KEY)" ]; then \
-		echo "$(COLOR_BOLD)使用方式:$(COLOR_RESET) make run-verify FILE=path/to/file_signed.pdf KEY='your-32-byte-key-here!!!!!!!!'"; \
-		exit 1; \
-	fi
-	@$(GO) run . verify -f $(FILE) -k "$(KEY)"
-
-install: build ## 安装到系统路径
-	@echo "$(COLOR_YELLOW)📦 安装 $(BINARY_NAME)...$(COLOR_RESET)"
-	@cp $(BUILD_DIR)/$(BINARY_NAME) /usr/local/bin/
-	@echo "$(COLOR_GREEN)✅ 已安装到 /usr/local/bin/$(BINARY_NAME)$(COLOR_RESET)"
-
-lint: ## 运行 golangci-lint 代码检查
+lint: ## 运行代码检查 (golangci-lint)
 	@echo "$(COLOR_YELLOW)🔍 运行代码检查...$(COLOR_RESET)"
 	@if command -v golangci-lint >/dev/null 2>&1; then \
 		golangci-lint run ./...; \
 	else \
-		echo "$(COLOR_YELLOW)⚠️  golangci-lint 未安装，使用 'make dev-deps' 安装$(COLOR_RESET)"; \
+		echo "$(COLOR_YELLOW)⚠️  警告: golangci-lint 未安装, 跳过 lint 检查$(COLOR_RESET)"; \
+		echo "   提示: 运行 'make dev-deps' 安装开发工具"; \
 	fi
 
-fmt: ## 格式化代码
+fmt: ## 格式化代码 (go fmt)
 	@echo "$(COLOR_YELLOW)✨ 格式化代码...$(COLOR_RESET)"
 	@$(GO) fmt ./...
-	@echo "$(COLOR_GREEN)✅ 代码格式化完成$(COLOR_RESET)"
 
-vet: ## 运行 go vet 检查
-	@echo "$(COLOR_YELLOW)🔍 运行 vet 检查...$(COLOR_RESET)"
+vet: ## 静态分析 (go vet)
+	@echo "$(COLOR_YELLOW)🔍 运行静态分析...$(COLOR_RESET)"
 	@$(GO) vet ./...
-	@echo "$(COLOR_GREEN)✅ Vet 检查完成$(COLOR_RESET)"
 
-check: fmt vet test ## 运行所有检查（格式化、vet、测试）
+check: fmt vet test-unit ## 运行完整质量检查流程 (fmt -> vet -> test)
+	@echo "$(COLOR_GREEN)✅ 基础检查通过$(COLOR_RESET)"
+
+check-full: fmt vet lint test-unit ## 运行完整质量检查流程 (包括 lint)
 	@echo "$(COLOR_GREEN)✅ 所有检查通过$(COLOR_RESET)"
 
-deps: ## 下载依赖
+##@ Dependency Management
+
+deps: ## 下载项目依赖
 	@echo "$(COLOR_YELLOW)📥 下载依赖...$(COLOR_RESET)"
 	@$(GO) mod download
-	@echo "$(COLOR_GREEN)✅ 依赖下载完成$(COLOR_RESET)"
 
-tidy: ## 整理依赖
+tidy: ## 整理模块依赖 (go mod tidy)
 	@echo "$(COLOR_YELLOW)🔧 整理依赖...$(COLOR_RESET)"
 	@$(GO) mod tidy
-	@echo "$(COLOR_GREEN)✅ 依赖整理完成$(COLOR_RESET)"
 
-dev-deps: ## 安装开发依赖工具
-	@echo "$(COLOR_YELLOW)📥 安装开发工具...$(COLOR_RESET)"
+dev-deps: ## 安装开发工具 (golangci-lint)
+	@echo "$(COLOR_YELLOW)📥 安装开发依赖...$(COLOR_RESET)"
 	@$(GO) install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-	@echo "$(COLOR_GREEN)✅ 开发工具安装完成$(COLOR_RESET)"
+	@echo "$(COLOR_GREEN)✅ 安装完成$(COLOR_RESET)"
 
-quick-test: ## 快速测试（使用示例文件）
-	@echo "$(COLOR_YELLOW)⚡ 快速测试...$(COLOR_RESET)"
-	@if [ ! -f testdata/2511.17467v2.pdf ]; then \
-		echo "$(COLOR_BOLD)错误:$(COLOR_RESET) 测试文件不存在"; \
-		exit 1; \
-	fi
-	@echo "$(COLOR_BLUE)1. 签名测试...$(COLOR_RESET)"
-	@$(GO) run . sign -f testdata/2511.17467v2.pdf -m "TEST:QuickTest" -k "TestKey12345678901234567890123" -r "test"
-	@echo "$(COLOR_BLUE)2. 验证测试...$(COLOR_RESET)"
-	@$(GO) run . verify -f testdata/2511.17467v2_test_signed.pdf -k "TestKey12345678901234567890123"
-	@echo "$(COLOR_GREEN)✅ 快速测试完成$(COLOR_RESET)"
+##@ Operations (Running)
 
-all: clean deps build test ## 完整构建流程（清理、下载依赖、编译、测试）
-	@echo "$(COLOR_GREEN)✅ 完整构建完成$(COLOR_RESET)"
+sign: ## 运行签名工具 (默认使用测试文件)
+	@echo "$(COLOR_YELLOW)🛡️  运行签名...$(COLOR_RESET)"
+	@$(eval FILE := $(if $(FILE),$(FILE),$(TEST_PDF)))
+	@$(eval KEY := $(if $(KEY),$(KEY),$(DEFAULT_KEY)))
+	@$(eval MSG := $(if $(MSG),$(MSG),Protected-$(shell date +%s)))
+	@echo "   📂 文件: $(FILE)"
+	@echo "   🔑 密钥: $(KEY)"
+	@echo "   📝 消息: $(MSG)"
+	@if [ ! -f "$(FILE)" ]; then echo "$(COLOR_RED)❌ 错误: 文件 $(FILE) 不存在$(COLOR_RESET)"; exit 1; fi
+	@$(GO) run . sign -f $(FILE) -m "$(MSG)" -k "$(KEY)"
 
-deliver-red: build ## 生成红方交付文件 (可通过 ROUND=R3 指定轮次)
-	@echo "$(COLOR_BOLD)$(COLOR_BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
-	@echo "$(COLOR_BOLD)$(COLOR_BLUE)        🛡️  PhantomStream 攻防演习 - 蓝方交付文件生成$(COLOR_RESET)"
-	@echo "$(COLOR_BOLD)$(COLOR_BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
-	@echo ""
-	@echo "$(COLOR_YELLOW)📋 配置信息:$(COLOR_RESET)"
-	@echo "   轮次: $(ROUND)"
-	@echo "   源文件: $(SOURCE_PDF)"
-	@echo "   消息: Defender:Phase7-$(ROUND)"
-	@echo ""
-	@echo "$(COLOR_YELLOW)🔨 步骤 1/3: 生成签名文件...$(COLOR_RESET)"
-	@$(BUILD_DIR)/$(BINARY_NAME) sign -f $(SOURCE_PDF) -m "Defender:Phase7-$(ROUND)" -k "$(KEY)" -r $(ROUND)
-	@echo ""
-	@echo "$(COLOR_YELLOW)🔍 步骤 2/3: 验证签名...$(COLOR_RESET)"
-	@$(BUILD_DIR)/$(BINARY_NAME) verify -f $(SIGNED_FILE) -k "$(KEY)"
-	@echo ""
-	@echo "$(COLOR_YELLOW)📊 步骤 3/3: 文件信息...$(COLOR_RESET)"
-	@ls -lh $(SIGNED_FILE) | awk '{print "   文件大小:", $$5}'
-	@echo ""
-	@echo "$(COLOR_GREEN)✅ 交付文件生成完成!$(COLOR_RESET)"
-	@echo "$(COLOR_GREEN)📁 文件路径: $(SIGNED_FILE)$(COLOR_RESET)"
-	@echo ""
-	@echo "$(COLOR_BOLD)$(COLOR_YELLOW)💡 下一步: 运行 'make notify-red ROUND=$(ROUND)' 发送通知消息$(COLOR_RESET)"
-	@echo "$(COLOR_BOLD)$(COLOR_BLUE)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
-
-notify-red: ## 显示红方通知消息 (可通过 ROUND=R3 指定轮次)
-	@echo ""
-	@echo "$(COLOR_BOLD)$(COLOR_BLUE)╔══════════════════════════════════════════════════════════════════════════════╗$(COLOR_RESET)"
-	@echo "$(COLOR_BOLD)$(COLOR_BLUE)║                    📨 PhantomStream 攻防演习 - 蓝队通知                      ║$(COLOR_RESET)"
-	@echo "$(COLOR_BOLD)$(COLOR_BLUE)╚══════════════════════════════════════════════════════════════════════════════╝$(COLOR_RESET)"
-	@echo ""
-	@echo "致：红方（Attacker）"
-	@echo "发自：蓝方（Defender）"
-	@date '+时间：%Y-%m-%d %H:%M:%S'
-	@echo "状态：✅ 防御升级完成"
-	@echo ""
-	@echo "$(COLOR_BOLD)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
-	@echo ""
-	@echo "$(COLOR_BOLD)$(COLOR_GREEN)## 📋 本轮交付信息$(COLOR_RESET)"
-	@echo ""
-	@echo "$(COLOR_BOLD)轮次$(COLOR_RESET)：$(ROUND)"
-	@echo "$(COLOR_BOLD)交付文件$(COLOR_RESET)：$(SIGNED_FILE)"
-	@ls -lh $(SIGNED_FILE) 2>/dev/null | awk '{print "$(COLOR_BOLD)文件大小$(COLOR_RESET)：", $$5}' || echo "$(COLOR_BOLD)文件大小$(COLOR_RESET)：文件未生成，请先运行 'make deliver-red'"
-	@echo "$(COLOR_BOLD)状态$(COLOR_RESET)：已完成防护处理"
-	@echo ""
-	@echo "$(COLOR_BOLD)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
-	@echo ""
-	@echo "$(COLOR_BOLD)$(COLOR_GREEN)## 🛡️  技术对抗$(COLOR_RESET)"
-	@echo ""
-	@echo "$(COLOR_BOLD)本方措施$(COLOR_RESET)："
-	@echo "- 已对文件进行增强防护处理"
-	@echo "- 采用符合 PDF 标准的技术方案"
-	@echo "- 文件结构完全合法，可被所有阅读器正常打开"
-	@echo ""
-	@echo "$(COLOR_BOLD)验证方式$(COLOR_RESET)："
-	@echo "- 样本文件已就绪，请自行测试"
-	@echo "- 文件路径：$(SIGNED_FILE)"
-	@echo ""
-	@echo "$(COLOR_BOLD)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
-	@echo ""
-	@echo "$(COLOR_BOLD)$(COLOR_GREEN)## 📊 技术要求$(COLOR_RESET)"
-	@echo ""
-	@echo "请红方完成以下任务："
-	@echo "1. ✅ 确保 PDF 文件结构完全合法"
-	@echo "2. ✅ 确保所有 PDF 阅读器均可正常打开"
-	@echo "3. ✅ 确保页面内容和视觉效果无异常"
-	@echo "4. ✅ 尝试清除本方防护机制"
-	@echo ""
-	@echo "$(COLOR_BOLD)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
-	@echo ""
-	@echo "$(COLOR_BOLD)$(COLOR_GREEN)## 🔍 等待反馈$(COLOR_RESET)"
-	@echo ""
-	@echo "请红方对本轮样本进行测试，并提供处理结果。"
-	@echo ""
-	@echo "期待您的挑战！🎯"
-	@echo ""
-	@echo "$(COLOR_BOLD)━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━$(COLOR_RESET)"
-	@echo ""
-	@echo "                              $(COLOR_BOLD)蓝方 (Defender)$(COLOR_RESET)"
-	@echo "                           PhantomStream 项目组"
-	@echo ""
-	@echo "$(COLOR_BOLD)$(COLOR_BLUE)╚══════════════════════════════════════════════════════════════════════════════╝$(COLOR_RESET)"
-	@echo ""
-
-deliver-and-notify: deliver-red notify-red ## 一键生成交付文件并显示通知消息
-	@echo ""
-	@echo "$(COLOR_GREEN)✅ 所有步骤完成！$(COLOR_RESET)"
-
-.PHONY: build-dev test-coverage bench deps tidy quick-test all deliver-and-notify
+verify: ## 运行验证工具 (默认验证生成的测试文件)
+	@echo "$(COLOR_YELLOW)🔍 运行验证...$(COLOR_RESET)"
+	@$(eval TARGET_FILE := $(if $(FILE),$(FILE),$(patsubst %.pdf,%_signed.pdf,$(TEST_PDF))))
+	@$(eval KEY := $(if $(KEY),$(KEY),$(DEFAULT_KEY)))
+	@echo "   📂 文件: $(TARGET_FILE)"
+	@echo "   🔑 密钥: $(KEY)"
+	@if [ ! -f "$(TARGET_FILE)" ]; then echo "$(COLOR_RED)❌ 错误: 文件 $(TARGET_FILE) 不存在. 请先运行 'make sign'$(COLOR_RESET)"; exit 1; fi
+	@$(GO) run . verify -f $(TARGET_FILE) -k "$(KEY)"

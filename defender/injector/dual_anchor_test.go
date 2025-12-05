@@ -219,7 +219,7 @@ func TestWatermarkDualAnchorSMaskInjection(t *testing.T) {
 	}
 
 	// Test SMask injection
-	err = injectSMaskAnchor(testPDFPath, outputPath, testPayload)
+	err = InjectSMaskAnchor(testPDFPath, outputPath, testPayload)
 	if err != nil {
 		// If PDF has no images, expect error
 		if err.Error() != "no images found in PDF (SMask anchor requires at least one image)" {
@@ -235,7 +235,7 @@ func TestWatermarkDualAnchorSMaskInjection(t *testing.T) {
 	}
 
 	// Try to extract payload
-	payload, err := extractSMaskPayloadFromPDF(outputPath)
+	payload, err := ExtractSMaskPayloadFromPDF(outputPath)
 	if err != nil {
 		t.Fatalf("Failed to extract SMask payload: %v", err)
 	}

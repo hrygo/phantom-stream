@@ -28,18 +28,15 @@ func (a *VisualAnchor) IsAvailable(ctx *model.Context) bool {
 
 // Inject adds a visible watermark to the PDF
 func (a *VisualAnchor) Inject(inputPath, outputPath string, payload []byte) error {
-	// Convert payload to hex string for display
-	hexPayload := fmt.Sprintf("%X", payload)
+	// Use plaintext payload as watermark content (deterrence, no encryption)
+	message := string(payload)
 
 	// Create a watermark configuration
-	// We display "CONFIDENTIAL" and the payload hash/hex
-	watermarkText := fmt.Sprintf("CONFIDENTIAL\nID: %s", hexPayload[:16]) // Display first 16 chars to avoid clutter
-	if len(hexPayload) < 16 {
-		watermarkText = fmt.Sprintf("CONFIDENTIAL\nID: %s", hexPayload)
-	}
+	// Display "CONFIDENTIAL" and the plaintext message
+	watermarkText := fmt.Sprintf("CONFIDENTIAL\n%s", message)
 
 	// Configure watermark
-	// Rotation: 45 degrees, Opacity: 0.5, Font: Helvetica, Size: 48, Color: Gray
+	// Rotation: 45 degrees, Opacity: 0.3, Font: Helvetica, Size: 48, Color: Gray
 	wmConf, err := api.TextWatermark(watermarkText, "rot:45, op:0.3, font:Helvetica, points:48, col:0.5 0.5 0.5", true, false, types.POINTS)
 	if err != nil {
 		return fmt.Errorf("failed to configure watermark: %w", err)
