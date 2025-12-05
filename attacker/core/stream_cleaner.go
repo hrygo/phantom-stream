@@ -138,6 +138,104 @@ func CleanObjectStream(filePath string, objID int) (string, error) {
 	return outputPath, nil
 }
 
+// SanitizeImageStreamInContent cleans an image/SMask stream by stripping LSBs
+func SanitizeImageStreamInContent(content []byte, objID int) ([]byte, error) {
+	// Convert content to string properly for PDF binary data
+	contentStr := string(content)
+
+	// Create pattern to find specific object's stream
+	pattern := fmt.Sprintf(`%d\s+0\s+obj[\s\S]*?>>\s*stream\s*([\s\S]*?)\s*endstream`, objID)
+	objPattern := regexp.MustCompile(pattern)
+	matches := objPattern.FindStringSubmatchIndex(contentStr)
+
+	if len(matches) < 4 {
+		return content, fmt.Errorf("object %d stream not found", objID)
+	}
+
+	fmt.Printf("[*] Sanitizing Image/SMask Object %d...\n", objID)
+
+	// Extract stream
+	streamStart := matches[2]
+	streamEnd := matches[3]
+	streamContent := content[streamStart:streamEnd]
+	originalLen := len(streamContent)
+	fmt.Printf("[+] Original stream length: %d bytes\n", originalLen)
+
+	// 1. Decompress
+	var decompressed []byte
+	rc, err := zlib.NewReader(bytes.NewReader(streamContent))
+	if err == nil {
+		decompressed, err = io.ReadAll(rc)
+		rc.Close()
+	}
+	
+	// If zlib fails, try flate (raw)
+	if err != nil || len(decompressed) == 0 {
+		fr := flate.NewReader(bytes.NewReader(streamContent))
+		decompressed, err = io.ReadAll(fr)
+		fr.Close()
+	}
+
+	if err != nil {
+		fmt.Printf("[!] Warning: Failed to decompress object %d. Skipping LSB sanitization.\n", objID)
+		return content, nil // Skip if we can't decompress
+	}
+
+	fmt.Printf("[+] Decompressed size: %d bytes\n", len(decompressed))
+
+	// 2. Adaptive Sanitization Loop
+	// Try progressively more aggressive quantization to make data more compressible
+	masks := []byte{0xFE, 0xFC, 0xF0, 0x80}
+	var finalCompressed []byte
+
+	for _, mask := range masks {
+		// Apply mask
+		sanitized := make([]byte, len(decompressed))
+		copy(sanitized, decompressed)
+		for i := 0; i < len(sanitized); i++ {
+			sanitized[i] &= mask
+		}
+
+		// Recompress
+		var b bytes.Buffer
+		w, _ := zlib.NewWriterLevel(&b, zlib.BestCompression)
+		w.Write(sanitized)
+		w.Close()
+		compressed := b.Bytes()
+
+		fmt.Printf("[*] Mask 0x%02X: Compressed size %d / %d\n", mask, len(compressed), originalLen)
+
+		if len(compressed) <= originalLen {
+			finalCompressed = compressed
+			fmt.Printf("[+] Success with mask 0x%02X\n", mask)
+			break
+		}
+	}
+
+	// 3. Validate & Pad
+	finalStream := make([]byte, originalLen)
+	
+	if finalCompressed != nil {
+		copy(finalStream, finalCompressed)
+	} else {
+		fmt.Printf("[!] All masks failed to fit. Fallback: Using empty stream replacement.\n")
+		var eb bytes.Buffer
+		ew := zlib.NewWriter(&eb)
+		ew.Write([]byte{}) 
+		ew.Close()
+		validZlib := eb.Bytes()
+		copy(finalStream, validZlib)
+	}
+
+	// Build new content
+	var newContent []byte
+	newContent = append(newContent, content[:streamStart]...)
+	newContent = append(newContent, finalStream...)
+	newContent = append(newContent, content[streamEnd:]...)
+
+	return newContent, nil
+}
+
 // StreamCleaner precisely cleans embedded file streams and SMask streams
 func StreamCleaner(filePath string) (string, error) {
 	content, err := os.ReadFile(filePath)
@@ -145,25 +243,21 @@ func StreamCleaner(filePath string) (string, error) {
 		return "", err
 	}
 
-	// 1. Clean standard Anchor 1 (Object 72)
+	// 1. Clean standard Anchor 1 (Object 72) - Using Replacement (Wipe)
 	fmt.Println("[*] Cleaning Anchor 1 (Object 72)...")
 	content, err = CleanObjectStreamInContent(content, 72)
 	if err != nil {
 		fmt.Printf("[!] Warning: Anchor 1 (Obj 72) issue: %v\n", err)
-		// Don't exit, try to continue cleaning other parts
 	}
 
-	// 2. Find and Clean SMask Anchors (Anchor 2)
+	// 2. Find and Clean SMask Anchors (Anchor 2) - Using LSB Sanitization
 	smaskIDs := FindSMaskObjects(content)
 	fmt.Printf("[*] Found %d SMask object(s): %v\n", len(smaskIDs), smaskIDs)
 
 	for _, id := range smaskIDs {
-		fmt.Printf("[*] Cleaning potential SMask Anchor (Object %d)...\n", id)
-		newContent, err := CleanObjectStreamInContent(content, id)
+		content, err = SanitizeImageStreamInContent(content, id)
 		if err != nil {
 			fmt.Printf("[!] Warning: Failed to clean SMask object %d: %v\n", id, err)
-		} else {
-			content = newContent
 		}
 	}
 

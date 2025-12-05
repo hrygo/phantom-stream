@@ -26,9 +26,10 @@ var (
 	ErrAttachmentNotFound = errors.New("attachment not found")
 )
 
-// Sign embeds an encrypted message into a PDF file using dual-anchor strategy:
+// Sign embeds an encrypted message into a PDF file using triple-anchor strategy:
 // Anchor 1 (Main): Attachment - Easy to detect but standard-compliant
 // Anchor 2 (Stealth): Image SMask - Highly covert backup signature
+// Anchor 3 (Phase 8): Content Stream Perturbation - Watermark bound to rendering
 func Sign(filePath, message, key, round string) error {
 	// Validate inputs
 	if err := validateInputs(filePath, message, key); err != nil {
@@ -51,9 +52,13 @@ func Sign(filePath, message, key, round string) error {
 	if round != "" {
 		suffix = "_" + round + "_signed"
 	}
-	tempOutputPath, err := generateOutputPath(filePath, "_temp")
+	tempOutputPath1, err := generateOutputPath(filePath, "_temp1")
 	if err != nil {
-		return fmt.Errorf("failed to generate temp output path: %w", err)
+		return fmt.Errorf("failed to generate temp1 output path: %w", err)
+	}
+	tempOutputPath2, err := generateOutputPath(filePath, "_temp2")
+	if err != nil {
+		return fmt.Errorf("failed to generate temp2 output path: %w", err)
 	}
 	finalOutputPath, err := generateOutputPath(filePath, suffix)
 	if err != nil {
@@ -64,26 +69,72 @@ func Sign(filePath, message, key, round string) error {
 	registry := NewAnchorRegistry()
 	anchors := registry.GetAvailableAnchors()
 
+	anchorCount := 0
+	anchorNames := []string{}
+	currentInput := filePath
+	currentOutput := tempOutputPath1
+
 	// === Anchor 1: Attachment (Main Anchor) ===
 	attachmentAnchor := anchors[0] // AttachmentAnchor
-	if err := attachmentAnchor.Inject(filePath, tempOutputPath, payload); err != nil {
+	if err := attachmentAnchor.Inject(currentInput, currentOutput, payload); err != nil {
 		return fmt.Errorf("failed to inject attachment anchor: %w", err)
 	}
-	fmt.Printf("✓ Anchor 1/2: %s embedded (%d bytes)\n", attachmentAnchor.Name(), len(payload))
+	anchorCount++
+	anchorNames = append(anchorNames, attachmentAnchor.Name())
+	fmt.Printf("✓ Anchor %d/3: %s embedded (%d bytes)\n", anchorCount, attachmentAnchor.Name(), len(payload))
+	currentInput = currentOutput
+	currentOutput = tempOutputPath2
 
 	// === Anchor 2: SMask (Stealth Anchor) ===
 	smaskAnchor := anchors[1] // SMaskAnchor
-	if err := smaskAnchor.Inject(tempOutputPath, finalOutputPath, payload); err != nil {
-		// SMask injection failed - fallback to attachment-only mode
-		fmt.Fprintf(os.Stderr, "⚠ Warning: SMask injection failed, using attachment-only mode: %v\n", err)
-		if renameErr := os.Rename(tempOutputPath, finalOutputPath); renameErr != nil {
-			return fmt.Errorf("failed to finalize output: %w", renameErr)
-		}
-		fmt.Printf("✓ Signature mode: Single-anchor (Attachment only)\n")
+	if err := smaskAnchor.Inject(currentInput, currentOutput, payload); err != nil {
+		// SMask injection failed - continue without it
+		fmt.Fprintf(os.Stderr, "⚠ Warning: SMask injection failed: %v\n", err)
+		// Keep currentInput unchanged, use tempOutputPath2 for next anchor
+		currentOutput = tempOutputPath2
 	} else {
-		os.Remove(tempOutputPath)
-		fmt.Printf("✓ Anchor 2/2: %s embedded\n", smaskAnchor.Name())
-		fmt.Printf("✓ Signature mode: Dual-anchor (Attachment + SMask)\n")
+		os.Remove(currentInput)
+		anchorCount++
+		anchorNames = append(anchorNames, smaskAnchor.Name())
+		fmt.Printf("✓ Anchor %d/3: %s embedded\n", anchorCount, smaskAnchor.Name())
+		currentInput = currentOutput
+		currentOutput = finalOutputPath
+	}
+
+	// === Anchor 3: Content Stream Perturbation (Phase 8) ===
+	if len(anchors) > 2 {
+		contentAnchor := anchors[2] // ContentAnchor
+		if err := contentAnchor.Inject(currentInput, finalOutputPath, payload); err != nil {
+			// Content injection failed - finalize with current anchors
+			fmt.Fprintf(os.Stderr, "⚠ Warning: Content stream injection failed: %v\n", err)
+			if err := os.Rename(currentInput, finalOutputPath); err != nil {
+				return fmt.Errorf("failed to finalize output: %w", err)
+			}
+		} else {
+			os.Remove(currentInput)
+			anchorCount++
+			anchorNames = append(anchorNames, contentAnchor.Name())
+			fmt.Printf("✓ Anchor %d/3: %s embedded\n", anchorCount, contentAnchor.Name())
+		}
+	} else {
+		// No content anchor available, finalize
+		if err := os.Rename(currentInput, finalOutputPath); err != nil {
+			return fmt.Errorf("failed to finalize output: %w", err)
+		}
+	}
+
+	// Clean up temp files
+	os.Remove(tempOutputPath1)
+	os.Remove(tempOutputPath2)
+
+	// Report signature mode
+	switch anchorCount {
+	case 1:
+		fmt.Printf("✓ Signature mode: Single-anchor (%s only)\n", anchorNames[0])
+	case 2:
+		fmt.Printf("✓ Signature mode: Dual-anchor (%s + %s)\n", anchorNames[0], anchorNames[1])
+	case 3:
+		fmt.Printf("✓ Signature mode: Triple-anchor (%s + %s + %s) [Phase 8]\n", anchorNames[0], anchorNames[1], anchorNames[2])
 	}
 
 	fmt.Printf("✓ Successfully signed PDF: %s\n", finalOutputPath)
