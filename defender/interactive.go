@@ -142,8 +142,8 @@ func interactiveProtect(scanner *bufio.Scanner) {
 	fmt.Println("\n" + ColorBold + "[Step 4/4] Select Protection Level:" + ColorReset)
 	// Use fixed width formatting for alignment
 	// %-24s pads string to 24 chars, aligned left
-	fmt.Printf("1. "+ColorGreen+"%-24s"+ColorReset+" - Attachment + SMask + Content (Zero Overhead)\n", "Invisible (Default)")
-	fmt.Printf("2. "+ColorYellow+"%-24s"+ColorReset+" - Invisible + Visual Watermark\n", "All Combined")
+	fmt.Printf("1. "+ColorGreen+"%-24s"+ColorReset+" - Invisible + Visual Watermark [Default]\n", "All Combined")
+	fmt.Printf("2. "+ColorYellow+"%-24s"+ColorReset+" - Attachment + SMask + Content (Zero Overhead)\n", "Invisible Only")
 	fmt.Printf("3. "+ColorBlue+"%-24s"+ColorReset+" - Select specific anchors manually\n", "Custom")
 	fmt.Print("> ")
 
@@ -155,16 +155,14 @@ func interactiveProtect(scanner *bufio.Scanner) {
 	var selectedAnchors []string
 
 	if level == "" || level == "1" {
-		fmt.Println(ColorGreen + "[*] Using Invisible Mode (Attachment, SMask, Content)" + ColorReset)
-		selectedAnchors = nil // Use default behavior (modified to be Invisible)
+		fmt.Println(ColorGreen + "[*] Using All Combined Mode (Invisible + Visual)" + ColorReset)
+		selectedAnchors = []string{"Attachment", "SMask", "Content", "Visual"}
 	} else {
 		switch level {
 		case "2":
-			// All Anchors (Invisible + Visual)
-			// Since generic Visual implies we want everything secure + visual
-			// But wait, user might just want Visual? Usually Visual is added ON TOP of invisible.
-			// Let's assume Visual Deterrence means "Max" (All).
-			selectedAnchors = []string{"Attachment", "SMask", "Content", "Visual"}
+			// Invisible Only
+			fmt.Println(ColorYellow + "[*] Using Invisible Mode Only" + ColorReset)
+			selectedAnchors = []string{"Attachment", "SMask", "Content"}
 		case "3":
 			// Custom selection
 			fmt.Println("\nAvailable Anchors: Attachment, SMask, Content, Visual")
@@ -242,7 +240,7 @@ func interactiveVerify(scanner *bufio.Scanner) {
 
 	// Step 3: Verification Mode
 	fmt.Println("\n" + ColorBold + "[Step 3/3] Select Verification Mode:" + ColorReset)
-	fmt.Println("1. " + ColorGreen + "Auto" + ColorReset + " (Stop at first success)")
+	fmt.Println("1. " + ColorGreen + "Auto" + ColorReset + " (Stop at first success) [Default]")
 	fmt.Println("2. " + ColorBlue + "All" + ColorReset + " (Try all anchors sequentially, show each result)")
 	fmt.Print("> ")
 

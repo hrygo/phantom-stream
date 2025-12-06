@@ -4,6 +4,14 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.0.2] - 2025-12-06
+
+### 🔄 变更
+
+- **交互模式默认策略调整**
+  - Protect 默认选项改为 **All Combined**（同时包含 Visual 水印与所有隐形锚点）。
+  - Verify 默认选项保持 **Auto**（快速验证）。
+
 ## [1.0.0] - 2025-12-05
 
 ### ✨ 新增
@@ -98,5 +106,7 @@
 
 ---
 
+[1.0.2]: https://github.com/YOUR_USERNAME/phantom-stream/releases/tag/v1.0.2
+[1.0.1]: https://github.com/YOUR_USERNAME/phantom-stream/releases/tag/v1.0.1
 [1.0.0]: https://github.com/YOUR_USERNAME/phantom-stream/releases/tag/v1.0.0
-[未发布]: https://github.com/YOUR_USERNAME/phantom-stream/compare/v1.0.0...HEAD
+[未发布]: https://github.com/YOUR_USERNAME/phantom-stream/compare/v1.0.2...HEAD

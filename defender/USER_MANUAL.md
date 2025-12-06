@@ -1,7 +1,7 @@
 # PhantomGuard 用户手册
 
-**版本**: 1.0.0  
-**最后更新**: 2025-12-05
+**版本**: 1.0.2  
+**最后更新**: 2025-12-06
 
 ---
 
@@ -224,10 +224,9 @@ phantom-guard
 - Step 2: 输入消息
 - Step 3: 输入密钥（可回车自动生成）
 - Step 4: 选择保护级别
-  - 1: Standard（仅 Attachment）
-  - 2: Stealth（Attachment + SMask）
-  - 3: Maximum（全部锚点）- **默认**
-  - 4: Custom（自定义组合）
+  - 1: All Combined（全部锚点）- **默认**
+  - 2: Invisible Only（Attachment + SMask + Content）
+  - 3: Custom（自定义组合）
 
 **提示**: 回车采用默认 Maximum 保护级别。
 
