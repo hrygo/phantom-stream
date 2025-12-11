@@ -15,7 +15,7 @@ var (
 	message    string
 	key        string
 	verifyMode string
-	version    = "1.0.2"
+	version    = "1.1.0"
 )
 
 var rootCmd = &cobra.Command{
