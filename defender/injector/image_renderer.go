@@ -14,7 +14,7 @@ import (
 
 // renderTextToPNG renders the given text to a transparent PNG using the embedded Unicode font.
 // It returns the PNG bytes or an error.
-func renderTextToPNG(text string) ([]byte, error) {
+func renderTextToPNG(text string, fontSize float64) ([]byte, error) {
 	if len(goNotoCurrentTTF) == 0 {
 		return nil, fmt.Errorf("embedded font data is empty")
 	}
@@ -26,8 +26,7 @@ func renderTextToPNG(text string) ([]byte, error) {
 	}
 
 	const (
-		fontSize = 48.0
-		dpi      = 72.0
+		dpi = 72.0
 	)
 
 	// Create a font face

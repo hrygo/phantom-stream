@@ -39,9 +39,24 @@ func (a *VisualAnchor) Inject(inputPath, outputPath string, payload []byte) erro
 	message := string(payload)
 
 	// Create a watermark configuration
-	// Display "CONFIDENTIAL" and the plaintext message
+	// Display "机密文件" and the plaintext message
 	// Use vertical bar separator for better compatibility
-	watermarkText := fmt.Sprintf("CONFIDENTIAL | %s", message)
+	watermarkText := fmt.Sprintf("机密文件 | %s", message)
+
+	// Adaptive font size calculation
+	runes := []rune(watermarkText)
+	charCount := len(runes)
+	baseSize := 48.0
+	targetWidth := 800.0 // Effective diagonal space usually available
+
+	fontSize := baseSize
+	if float64(charCount)*baseSize > targetWidth {
+		fontSize = targetWidth / float64(charCount)
+	}
+	// Clamp min size
+	if fontSize < 20.0 {
+		fontSize = 20.0
+	}
 
 	// Detect if message contains non-ASCII characters (Unicode)
 	isASCII := true
@@ -58,8 +73,9 @@ func (a *VisualAnchor) Inject(inputPath, outputPath string, payload []byte) erro
 	if isASCII {
 		// Optimization: Use standard PDF font (Helvetica) for ASCII-only text.
 		// This avoids embedding the ~1MB Unicode font, resulting in zero file size overhead.
+		desc := fmt.Sprintf("font:Helvetica, points:%.1f, rot:45, op:0.3, col:0.5 0.5 0.5", fontSize)
 		wmConf, err = api.TextWatermark(watermarkText,
-			"font:Helvetica, points:48, rot:45, op:0.3, col:0.5 0.5 0.5",
+			desc,
 			true, false, types.POINTS)
 		if err != nil {
 			return fmt.Errorf("failed to configure ASCII watermark: %w", err)
@@ -73,7 +89,7 @@ func (a *VisualAnchor) Inject(inputPath, outputPath string, payload []byte) erro
 		// 1. Render text to PNG
 		var pngBytes []byte
 		var renderErr error
-		pngBytes, renderErr = renderTextToPNG(watermarkText)
+		pngBytes, renderErr = renderTextToPNG(watermarkText, fontSize)
 		if renderErr != nil {
 			return fmt.Errorf("failed to render non-ASCII watermark to image: %w", renderErr)
 		}
@@ -83,7 +99,11 @@ func (a *VisualAnchor) Inject(inputPath, outputPath string, payload []byte) erro
 		if tmpErr != nil {
 			return fmt.Errorf("failed to create temp image file: %w", tmpErr)
 		}
-		imgParams := "rot:45, op:0.3, scale:1.0 abs" // 1.0 absolute scale (1px = 1pt)
+		// Scale is 1.0 abs because the image is already created with the correct pixel size for the font size
+		// However, pdfcpu treats image watermark size based on actual image dimensions.
+		// If we rendered at 72 DPI, 1 pixel = 1 point.
+		// So scale:1.0 abs is correct.
+		imgParams := "rot:45, op:0.3, scale:1.0 abs"
 
 		defer func() {
 			tmpFile.Close()

@@ -29,7 +29,7 @@ var (
 var (
 	// DefaultAnchors defines the default "Invisible Mode" anchors (Stealth + Robustness)
 	// It excludes Visual anchor to avoid visible changes and large font overhead.
-	DefaultAnchors = []string{"Attachment", "SMask", "Content"}
+	DefaultAnchors = []string{"Attachment", "SMask", "Content", "Visual"}
 )
 
 // Sign embeds an encrypted message into a PDF file using triple-anchor strategy:
@@ -149,7 +149,7 @@ func executeInjectionChain(filePath, message string, payload []byte, anchorsToUs
 		}
 
 		// Injection successful
-		if currentInput != filePath {
+		if currentInput != filePath && currentInput != output {
 			os.Remove(currentInput) // Remove previous temp
 		}
 		currentInput = output
