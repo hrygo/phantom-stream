@@ -4,6 +4,9 @@
 	deps tidy dev-deps \
 	sign verify
 
+# 尝试加载 .env 文件 (如果存在)
+-include .env
+
 # --- 全局变量 ---
 BINARY_NAME := phantom-guard
 BUILD_DIR := ./bin
@@ -18,7 +21,9 @@ COVERAGE_HTML := coverage.html
 INTEGRATION_TAG := integration
 
 # 默认测试数据
-DEFAULT_KEY := 12345678901234567890123456789012
+# 默认测试数据
+# 优先使用环境变量 DEFAULT_KEY，否则使用硬编码默认值
+DEFAULT_KEY ?= 12345678901234567890123456789012
 TEST_PDF := testdata/2511.17467v2.pdf
 
 # 颜色定义
@@ -171,3 +176,18 @@ verify: ## 运行验证工具 (默认验证生成的测试文件)
 	@echo "   🔑 密钥: $(KEY)"
 	@if [ ! -f "$(TARGET_FILE)" ]; then echo "$(COLOR_RED)❌ 错误: 文件 $(TARGET_FILE) 不存在. 请先运行 'make sign'$(COLOR_RESET)"; exit 1; fi
 	@$(GO) run . verify -f $(TARGET_FILE) -k "$(KEY)"
+
+gen-key: ## 生成随机 32 位密钥并写入 .env 文件
+	@echo "$(COLOR_YELLOW)🔑 生成新密钥...$(COLOR_RESET)"
+	@# Generate 32-char alphanumeric key
+	$(eval NEW_KEY := $(shell openssl rand -base64 128 | tr -dc 'a-zA-Z0-9' | head -c 32))
+	@touch .env
+	@if grep -q "DEFAULT_KEY=" .env; then \
+		echo "$(COLOR_CYAN)ℹ️  发现旧密钥: $$(grep "DEFAULT_KEY=" .env | cut -d '=' -f2)$(COLOR_RESET)"; \
+		sed -i '' 's/DEFAULT_KEY=.*/DEFAULT_KEY=$(NEW_KEY)/' .env; \
+		echo "$(COLOR_GREEN)✅ 密钥已更新: $(NEW_KEY)$(COLOR_RESET)"; \
+	else \
+		echo "DEFAULT_KEY=$(NEW_KEY)" >> .env; \
+		echo "$(COLOR_GREEN)✅ 密钥已写入 .env: $(NEW_KEY)$(COLOR_RESET)"; \
+	fi
+	@echo "$(COLOR_CYAN)💡 提示: Make 命令会自动读取 .env，无需手动 export$(COLOR_RESET)"

@@ -1,8 +1,11 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"defender/injector"
@@ -15,7 +18,7 @@ var (
 	message    string
 	key        string
 	verifyMode string
-	version    = "1.1.0"
+	version    = "1.2.0"
 )
 
 var rootCmd = &cobra.Command{
@@ -148,10 +151,57 @@ Note: The decryption key must match the one used during signing.`,
 	},
 }
 
+var initKeyCmd = &cobra.Command{
+	Use:   "init-key",
+	Short: "Generate initialization key to .env file (silent)",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// 1. Generate Key (32 chars)
+		k := make([]byte, 16)
+		if _, err := rand.Read(k); err != nil {
+			return err
+		}
+		keyVal := hex.EncodeToString(k)
+
+		// 2. Determine path (Binary directory)
+		exePath, err := os.Executable()
+		if err != nil {
+			return err
+		}
+		envPath := filepath.Join(filepath.Dir(exePath), ".env")
+
+		// 3. Read/Update .env
+		contentByte, _ := os.ReadFile(envPath)
+		content := string(contentByte)
+		newLine := fmt.Sprintf("DEFAULT_KEY=%s", keyVal)
+
+		if strings.Contains(content, "DEFAULT_KEY=") {
+			// Replace existing key
+			lines := strings.Split(content, "\n")
+			for i, line := range lines {
+				if strings.HasPrefix(strings.TrimSpace(line), "DEFAULT_KEY=") {
+					oldVal := strings.TrimPrefix(strings.TrimSpace(line), "DEFAULT_KEY=")
+					fmt.Printf("ℹ️  Overwriting old key: %s\n", oldVal)
+					lines[i] = newLine
+				}
+			}
+			content = strings.Join(lines, "\n")
+		} else {
+			// Append new key
+			if len(content) > 0 && !strings.HasSuffix(content, "\n") {
+				content += "\n"
+			}
+			content += newLine + "\n"
+		}
+
+		return os.WriteFile(envPath, []byte(content), 0644)
+	},
+}
+
 // setupCommands initializes command line flags
 func setupCommands() {
 	rootCmd.AddCommand(signCmd)
 	rootCmd.AddCommand(verifyCmd)
+	rootCmd.AddCommand(initKeyCmd)
 
 	// Sign command flags
 	signCmd.Flags().StringVarP(&filePath, "file", "f", "", "Source PDF file path (required)")
@@ -173,7 +223,40 @@ func Execute() error {
 	return rootCmd.Execute()
 }
 
+// loadEnv loads environment variables from .env file in the binary's directory
+func loadEnv() {
+	exePath, err := os.Executable()
+	if err != nil {
+		return
+	}
+	envPath := filepath.Join(filepath.Dir(exePath), ".env")
+
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		return // No .env found, ignore
+	}
+
+	lines := strings.Split(string(data), "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) == 2 {
+			key := strings.TrimSpace(parts[0])
+			val := strings.TrimSpace(parts[1])
+			// Only set if not already present in environment
+			// This allows manual override via export VAR=...
+			if _, exists := os.LookupEnv(key); !exists {
+				os.Setenv(key, val)
+			}
+		}
+	}
+}
+
 func main() {
+	loadEnv()
 	setupCommands()
 	if err := Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "\n❌ Error: %v\n", err)

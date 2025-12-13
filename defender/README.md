@@ -34,6 +34,7 @@
 - **🔄 架构灵活**：模块化设计支持轻松扩展新锚点类型
 - **🎯 易用性增强**：交互模式提供 Lookup 功能，一键验证上次签名文件
 - **📦 零依赖部署**：编译为单个二进制文件，无需额外依赖
+- **🚀 快捷配置**：支持 `.env` 文件和 `init-key` 命令，自动加载默认密钥
 
 ## 🔬 技术原理：多锚点防御
 
@@ -91,9 +92,28 @@ go build -o defender
 
 ## 🎯 快速开始
 
-### 1. 签名 PDF 文件（多锚点）
+### 1. 初始化（可选）
 
-为 PDF 文件嵌入追踪信息，默认会尝试嵌入所有可用锚点（Maximum 模式）：
+Defender 支持将密钥保存在环境变量中，避免每次手动输入。
+
+```bash
+# 生成新的随机密钥并写入 .env 文件
+./defender init-key
+# 成功生成: DEFAULT_KEY=...
+```
+
+### 2. 签名 PDF 文件（多锚点）
+
+为 PDF 文件嵌入追踪信息，默认会尝试嵌入所有可用锚点（Maximum 模式）。如果已运行 `init-key`，则无需提供 `-k` 参数。
+
+```bash
+./defender sign \
+  -f /path/to/document.pdf \
+  -m "UserID:12345"
+  # -k 参数可省略，将自动使用 .env 中的 DEFAULT_KEY
+```
+
+若需手动指定密钥：
 
 ```bash
 ./defender sign \
@@ -122,12 +142,16 @@ go build -o defender
 ```
 **注意**：如果 PDF 文件不包含图像，SMask 锚点将自动跳过。Visual 水印以明文形式显示，用于震慑。
 
-### 2. 验证追踪信息（多锚点容错）
+### 3. 验证追踪信息（多锚点容错）
 
 从签名的 PDF 文件中提取并验证追踪信息。支持两种验证模式：
 
 **Auto 模式（默认，快速验证）**：
 ```bash
+# 使用环境变量中的密钥
+./defender verify -f /path/to/document_signed.pdf
+
+# 或手动指定
 ./defender verify \
   -f /path/to/document_signed.pdf \
   -k "12345678901234567890123456789012"
@@ -137,7 +161,6 @@ go build -o defender
 ```bash
 ./defender verify \
   -f /path/to/document_signed.pdf \
-  -k "12345678901234567890123456789012" \
   --mode=all
 ```
 
@@ -164,9 +187,10 @@ go build -o defender
 ✅ Verification finished (mode=all).
 ```
 
-### 3. 交互模式 (Interactive Mode)
+### 4. 交互模式 (Interactive Mode)
 
-如果不带任何参数运行 Defender，将进入交互模式，引导您完成操作：
+如果不带任何参数运行 Defender，将进入交互模式，引导您完成操作。
+**提示**：交互模式也会自动加载 `.env` 中的 `DEFAULT_KEY`。
 
 ```bash
 ./defender
@@ -192,6 +216,13 @@ Select option (1-4): 1
 
 [Step 3/4] Enter encryption key (32 chars) [Press Enter to generate]:
 > 
+[*] Using key from environment (DEFAULT_KEY)
+```
+
+若无环境变量则生成随机密钥：
+```
+[Step 3/4] Enter encryption key (32 chars) [Press Enter to generate]:
+>
 [*] Generated Key: a1b2c3d4e5f6... (32 bytes)
 
 [Step 4/4] Select protection level:
@@ -247,10 +278,17 @@ defender verify [flags]
 
 Flags:
   -f, --file string   目标 PDF 文件路径 (必填)
-  -k, --key string    32 字节解密密钥 (必填)
+  -f, --file string   目标 PDF 文件路径 (必填)
+  -k, --key string    32 字节解密密钥 (若已设置 DEFAULT_KEY 可选)
   --mode string       验证模式: auto|all (默认 auto)
   -h, --help          显示帮助信息
 ```
+
+### 初始化命令
+```bash
+defender init-key
+```
+生成随机密钥并保存到 `.env` 文件。如果文件已存在，会覆盖 `DEFAULT_KEY` 并提示旧密钥。
 
 **使用示例：**
 
@@ -510,14 +548,14 @@ registry.AddAnchor(&MetadataAnchor{})
 
 Defender 在 PhantomStream 攻防演习中经历了多个阶段的进化：
 
-| 阶段          | 策略                        | 红队攻击                              | 结果            |
-| ------------- | --------------------------- | ------------------------------------- | --------------- |
-| Phase 1-4     | 物理/结构层防御             | 截断 / 间隙覆盖 / 版本回滚 / 图谱修剪 | ❌ 失败          |
-| Phase 5       | 嵌入式附件 (单锚点)         | 语义分析 (成功检测，但无法无损清除)   | ✅ 阶段性成功    |
-| Phase 6       | 流内容清洗突破              | 精准流清洗 (保持字节长度替换内容)     | ❌ 失败 (被突破) |
-| Phase 7.1     | 双轨验证 (附件 + SMask) | 深度探测 / 清除附件 (SMask 仍有效)    | ✅ 成功防御  |
-| Phase 7.2     | 架构重构                | (内部优化)                            | ✅ 提升可扩展性  |
-| **Phase 8**   | **多锚点防御 (4锚点)** | 继续演习中                            | ✅ **持续防御**  |
+| 阶段        | 策略                    | 红队攻击                              | 结果            |
+| ----------- | ----------------------- | ------------------------------------- | --------------- |
+| Phase 1-4   | 物理/结构层防御         | 截断 / 间隙覆盖 / 版本回滚 / 图谱修剪 | ❌ 失败          |
+| Phase 5     | 嵌入式附件 (单锚点)     | 语义分析 (成功检测，但无法无损清除)   | ✅ 阶段性成功    |
+| Phase 6     | 流内容清洗突破          | 精准流清洗 (保持字节长度替换内容)     | ❌ 失败 (被突破) |
+| Phase 7.1   | 双轨验证 (附件 + SMask) | 深度探测 / 清除附件 (SMask 仍有效)    | ✅ 成功防御      |
+| Phase 7.2   | 架构重构                | (内部优化)                            | ✅ 提升可扩展性  |
+| **Phase 8** | **多锚点防御 (4锚点)**  | 继续演习中                            | ✅ **持续防御**  |
 
 **Phase 8 关键改进：**
 - 🎯 新增 Content 锚点，与页面渲染逻辑绑定。

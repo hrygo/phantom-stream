@@ -123,13 +123,21 @@ func interactiveProtect(scanner *bufio.Scanner) {
 	key := strings.TrimSpace(scanner.Text())
 
 	if key == "" {
-		k := make([]byte, 16)
-		if _, err := rand.Read(k); err != nil {
-			fmt.Printf(ColorRed+"Error generating key: %v\n"+ColorReset, err)
-			return
+		// Try to get from environment first
+		envKey := os.Getenv("DEFAULT_KEY")
+		if len(envKey) == 32 {
+			key = envKey
+			fmt.Println(ColorGreen + "[*] Using key from environment (DEFAULT_KEY)" + ColorReset)
+		} else {
+			// Generate random key if no env key or valid env key
+			k := make([]byte, 16)
+			if _, err := rand.Read(k); err != nil {
+				fmt.Printf(ColorRed+"Error generating key: %v\n"+ColorReset, err)
+				return
+			}
+			key = hex.EncodeToString(k)
+			fmt.Printf(ColorGreen+"[*] Generated Key: %s\n"+ColorReset, key)
 		}
-		key = hex.EncodeToString(k)
-		fmt.Printf(ColorGreen+"[*] Generated Key: %s\n"+ColorReset, key)
 	}
 
 	if len(key) != 32 {
