@@ -4,6 +4,18 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.1] - 2025-12-13
+
+### 🔧 优化
+- **构建系统**：添加根目录 `Makefile`，支持从项目根目录直接运行 `make build`、`make install` 等命令。
+
+## [1.2.0] - 2025-12-13
+
+### ✨ 新增
+- **密钥管理**：新增 `init-key` 命令，支持快速生成并保存默认密钥。
+- **环境配置**：支持 `.env` 文件和 `DEFAULT_KEY` 环境变量，简化密钥调用。
+- **交互优化**：交互模式（Interactive Mode）现已自动读取 `DEFAULT_KEY`，无需重复输入。
+
 ## [1.1.0] - 2025-12-11
 
 ### ✨ 新增
@@ -116,7 +128,10 @@
 
 ---
 
-[1.0.2]: https://github.com/YOUR_USERNAME/phantom-stream/releases/tag/v1.0.2
-[1.0.1]: https://github.com/YOUR_USERNAME/phantom-stream/releases/tag/v1.0.1
-[1.0.0]: https://github.com/YOUR_USERNAME/phantom-stream/releases/tag/v1.0.0
-[未发布]: https://github.com/YOUR_USERNAME/phantom-stream/compare/v1.0.2...HEAD
+[1.2.1]: https://github.com/hrygo/phantom-stream/releases/tag/v1.2.1
+[1.2.0]: https://github.com/hrygo/phantom-stream/releases/tag/v1.2.0
+[1.1.0]: https://github.com/hrygo/phantom-stream/releases/tag/v1.1.0
+[1.0.2]: https://github.com/hrygo/phantom-stream/releases/tag/v1.0.2
+[1.0.1]: https://github.com/hrygo/phantom-stream/releases/tag/v1.0.1
+[1.0.0]: https://github.com/hrygo/phantom-stream/releases/tag/v1.0.0
+[未发布]: https://github.com/hrygo/phantom-stream/compare/v1.2.1...HEAD
