@@ -59,8 +59,14 @@ Note: The encryption key must be exactly 32 bytes long.`,
 		if message == "" {
 			return fmt.Errorf("required flag --msg is missing")
 		}
+
+		// Handle Key (Flag -> Env -> Error)
 		if key == "" {
-			return fmt.Errorf("required flag --key is missing")
+			key = os.Getenv("DEFAULT_KEY")
+			if key == "" {
+				return fmt.Errorf("required flag --key is missing and DEFAULT_KEY env not set")
+			}
+			fmt.Println("ℹ️  Using key from environment variable DEFAULT_KEY")
 		}
 
 		fmt.Printf("🛡️  Defender Sign Operation\n")
@@ -98,8 +104,14 @@ Note: The decryption key must match the one used during signing.`,
 		if filePath == "" {
 			return fmt.Errorf("required flag --file is missing")
 		}
+
+		// Handle Key (Flag -> Env -> Error)
 		if key == "" {
-			return fmt.Errorf("required flag --key is missing")
+			key = os.Getenv("DEFAULT_KEY")
+			if key == "" {
+				return fmt.Errorf("required flag --key is missing and DEFAULT_KEY env not set")
+			}
+			fmt.Println("ℹ️  Using key from environment variable DEFAULT_KEY")
 		}
 
 		fmt.Printf("🔍 Defender Verify Operation\n")
@@ -206,17 +218,15 @@ func setupCommands() {
 	// Sign command flags
 	signCmd.Flags().StringVarP(&filePath, "file", "f", "", "Source PDF file path (required)")
 	signCmd.Flags().StringVarP(&message, "msg", "m", "", "Message to embed, e.g., 'UserID:123' (required)")
-	signCmd.Flags().StringVarP(&key, "key", "k", "", "32-byte encryption key (required)")
+	signCmd.Flags().StringVarP(&key, "key", "k", "", "32-byte encryption key (optional if DEFAULT_KEY env is set)")
 	_ = signCmd.MarkFlagRequired("file")
 	_ = signCmd.MarkFlagRequired("msg")
-	_ = signCmd.MarkFlagRequired("key")
 
 	// Verify command flags
 	verifyCmd.Flags().StringVarP(&filePath, "file", "f", "", "Target PDF file path (required)")
-	verifyCmd.Flags().StringVarP(&key, "key", "k", "", "32-byte decryption key (required)")
+	verifyCmd.Flags().StringVarP(&key, "key", "k", "", "32-byte decryption key (optional if DEFAULT_KEY env is set)")
 	verifyCmd.Flags().StringVar(&verifyMode, "mode", "auto", "Verification mode: auto|all")
 	_ = verifyCmd.MarkFlagRequired("file")
-	_ = verifyCmd.MarkFlagRequired("key")
 }
 
 func Execute() error {
