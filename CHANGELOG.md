@@ -4,6 +4,11 @@
 
 格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/)，版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.2] - 2025-12-13
+
+### 🐛 修复
+- **Visual 水印**：真正移除 `"机密文件 | "` 前缀（修复 v1.1.0 中遗漏的实现）。
+
 ## [1.2.1] - 2025-12-13
 
 ### 🔧 优化
@@ -129,10 +134,11 @@
 
 ---
 
+[1.2.2]: https://github.com/hrygo/phantom-stream/releases/tag/v1.2.2
 [1.2.1]: https://github.com/hrygo/phantom-stream/releases/tag/v1.2.1
 [1.2.0]: https://github.com/hrygo/phantom-stream/releases/tag/v1.2.0
 [1.1.0]: https://github.com/hrygo/phantom-stream/releases/tag/v1.1.0
 [1.0.2]: https://github.com/hrygo/phantom-stream/releases/tag/v1.0.2
 [1.0.1]: https://github.com/hrygo/phantom-stream/releases/tag/v1.0.1
 [1.0.0]: https://github.com/hrygo/phantom-stream/releases/tag/v1.0.0
-[未发布]: https://github.com/hrygo/phantom-stream/compare/v1.2.1...HEAD
+[未发布]: https://github.com/hrygo/phantom-stream/compare/v1.2.2...HEAD

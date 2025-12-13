@@ -39,9 +39,8 @@ func (a *VisualAnchor) Inject(inputPath, outputPath string, payload []byte) erro
 	message := string(payload)
 
 	// Create a watermark configuration
-	// Display "机密文件" and the plaintext message
-	// Use vertical bar separator for better compatibility
-	watermarkText := fmt.Sprintf("机密文件 | %s", message)
+	// Use plaintext message directly as watermark text
+	watermarkText := message
 
 	// Adaptive font size calculation
 	runes := []rune(watermarkText)
